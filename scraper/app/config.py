@@ -1,2 +1,4 @@
 
-TIME_WINDOW = { "hours": 4}
+TIME_WINDOW = {
+  "hours": 4,
+}

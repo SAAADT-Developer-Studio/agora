@@ -3,7 +3,7 @@ import httpx
 import asyncio
 from datetime import datetime, timedelta
 import itertools
-from .. import config
+from app import config
 
 async def fetch_page_articles(url: str) -> list[str]:
     async with httpx.AsyncClient() as client:
@@ -14,7 +14,7 @@ async def fetch_page_articles(url: str) -> list[str]:
         for article in articles:
             url = article["loc"]
             last_mod = datetime.fromisoformat(article["lastmod"])
-            if "/novice/" in url and last_mod > datetime.now(last_mod.tzinfo)-timedelta(**config.TIME_WINDOW):
+            if "/novice/" in url and last_mod > datetime.now(last_mod.tzinfo) - timedelta(**config.TIME_WINDOW):
                 urls.append(url)
         return urls
 

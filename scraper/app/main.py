@@ -1,11 +1,11 @@
 import asyncio
 import dotenv
 
-from extractor import extract_article
-from models import Article
-from database import connect_db
+from app.extractor import extract_article
+from app.models import Article
+from app.database import connect_db
 from sqlmodel import Session
-from providers.fetch import fetch_articles
+from app.fetch_urls import fetch_articles
 
 async def main():
     dotenv.load_dotenv()
