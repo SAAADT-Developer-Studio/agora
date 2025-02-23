@@ -12,6 +12,7 @@ class Article(BaseModel):
     content: str
     num_comments: int
 
+# TODO: handle potentialy paywalled articles and other possible errors
 async def extract_article(article_url: str):
     # 1. Define the LLM extraction strategy
     llm_strategy = LLMExtractionStrategy(

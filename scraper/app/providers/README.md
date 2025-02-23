@@ -8,7 +8,7 @@ News providers TODO:
 - [x] [necenzurirano.py](scraper/app/providers/necenzurirano.py): Implement scraping logic.
 - [x] [dnevnik.py](scraper/app/providers/dnevnik.py): Implement scraping logic.
 - [x] [svet24.py](scraper/app/providers/svet24.py):
-- [ ] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
+- [x] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
 - [ ] [mladina.py](scraper/app/providers/mladina.py): Implement scraping logic.
 - [ ] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement scraping logic.
 - [ ] [skandal24.py](scraper/app/providers/skandal24.py): Implement scraping logic.
@@ -24,3 +24,7 @@ News providers TODO:
 ### paywalled, which sucks
 
 - [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.
+
+### TODO: check which providers are possibly have paywalled articles
+
+### TODO: check edge cases where we scrape only for todays date. if we scrape every 4 hours, we can miss up to 4 hours of articles before midnight
