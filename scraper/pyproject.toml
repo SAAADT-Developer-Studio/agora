@@ -6,11 +6,18 @@ authors = ["marko154 <marko.gartnar777@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.12"
 crawl4ai = "^0.4.247"
 pydantic = "^2.10.5"
+python-dotenv = "^1.0.1"
+sqlmodel = "^0.0.22"
+httpx = "^0.28.1"
+xmltodict = "^0.14.2"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+enable_incomplete_feature = "NewGenericSyntax"

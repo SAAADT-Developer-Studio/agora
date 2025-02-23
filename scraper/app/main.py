@@ -5,16 +5,17 @@ from extractor import extract_article
 from models import Article
 from database import connect_db
 from sqlmodel import Session
-
+from providers.fetch import fetch_articles
 
 async def main():
     dotenv.load_dotenv()
     engine = connect_db()
 
+    articles = await fetch_articles()
+    exit()
     article = await extract_article(
         "https://www.24ur.com/novice/gospodarstvo/ameriska-centralna-banka-ohranila-kljucno-obrestno-mero.html"
     )
-    exit()
     with Session(engine) as session:
         session.add(
             Article(
