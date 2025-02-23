@@ -3,8 +3,8 @@ News providers TODO:
 - [x] [24ur.py](scraper/app/providers/_24ur.py): Verify and improve fetching articles.
 - [x] [rtv.py](scraper/app/providers/rtv.py): Implement scraping logic.
 - [x] [delo.py](scraper/app/providers/delo.py): Implement scraping logic.
-- [ ] [siol.py](scraper/app/providers/siol.py): Implement scraping logic.
-- [ ] [nova24tv.py](scraper/app/providers/nova24tv.py): Implement scraping logic.
+- [x] [siol.py](scraper/app/providers/siol.py): Implement scraping logic.
+- [x] [nova24tv.py](scraper/app/providers/nova24tv.py): Implement scraping logic.
 - [ ] [necenzurirano.py](scraper/app/providers/necenzurirano.py): Implement scraping logic.
 - [ ] [dnevnik.py](scraper/app/providers/dnevnik.py): Implement scraping logic.
 - [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.
