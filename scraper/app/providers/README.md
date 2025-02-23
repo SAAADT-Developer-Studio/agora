@@ -6,7 +6,7 @@ News providers TODO:
 - [x] [siol.py](scraper/app/providers/siol.py): Implement scraping logic.
 - [x] [nova24tv.py](scraper/app/providers/nova24tv.py): Implement scraping logic.
 - [x] [necenzurirano.py](scraper/app/providers/necenzurirano.py): Implement scraping logic.
-- [ ] [dnevnik.py](scraper/app/providers/dnevnik.py): Implement scraping logic.
+- [x] [dnevnik.py](scraper/app/providers/dnevnik.py): Implement scraping logic.
 - [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.
 - [ ] [svet24.py](scraper/app/providers/svet24.py): Implement scraping logic.
 - [ ] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
@@ -20,3 +20,4 @@ News providers TODO:
 - [ ] [podcrto.py](scraper/app/providers/podcrto.py): Implement scraping logic.
 - [ ] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [ ] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
+- [ ] [sta.py](scraper/app/providers/sta.py): Implement scraping logic.
