@@ -1,4 +1,4 @@
-from app.providers import _24ur, rtv, delo, siol, nova24tv, necenzurirano, dnevnik
+from app.providers import _24ur, rtv, delo, siol, nova24tv, necenzurirano, dnevnik, svet24
 
 async def fetch_articles():
   # await _24ur.fetch_articles()
@@ -7,4 +7,5 @@ async def fetch_articles():
   # await siol.fetch_articles()
   # await nova24tv.fetch_articles()
   # await necenzurirano.fetch_articles()
-  await dnevnik.fetch_articles()
+  # await dnevnik.fetch_articles()
+  await svet24.fetch_articles()

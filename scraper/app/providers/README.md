@@ -7,8 +7,7 @@ News providers TODO:
 - [x] [nova24tv.py](scraper/app/providers/nova24tv.py): Implement scraping logic.
 - [x] [necenzurirano.py](scraper/app/providers/necenzurirano.py): Implement scraping logic.
 - [x] [dnevnik.py](scraper/app/providers/dnevnik.py): Implement scraping logic.
-- [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.
-- [ ] [svet24.py](scraper/app/providers/svet24.py): Implement scraping logic.
+- [x] [svet24.py](scraper/app/providers/svet24.py):
 - [ ] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
 - [ ] [mladina.py](scraper/app/providers/mladina.py): Implement scraping logic.
 - [ ] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement scraping logic.
@@ -21,3 +20,7 @@ News providers TODO:
 - [ ] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [ ] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [ ] [sta.py](scraper/app/providers/sta.py): Implement scraping logic.
+
+### paywalled, which sucks
+
+- [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.

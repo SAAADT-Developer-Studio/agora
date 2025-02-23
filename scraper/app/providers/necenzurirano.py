@@ -39,6 +39,7 @@ async def fetch_old_articles():
             {
                 "name": "article",
                 "type": "text",
+                # TODO: crawl4ai supports regex extraction, check svet24.py for example
             },
         ]
     }
