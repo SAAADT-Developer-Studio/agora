@@ -1,4 +1,4 @@
-from app.providers import _24ur, rtv, delo, siol, nova24tv, necenzurirano, dnevnik, svet24, vecer
+from app.providers import _24ur, rtv, delo, siol, nova24tv, necenzurirano, dnevnik, svet24, vecer, mladina
 
 async def fetch_articles():
   # TODO: dispatch articles to a queue for processing
@@ -13,4 +13,5 @@ async def fetch_articles():
   # await necenzurirano.fetch_articles()
   # await dnevnik.fetch_articles()
   # await svet24.fetch_articles()
-  await vecer.fetch_articles()
+  # await vecer.fetch_articles()
+  await mladina.fetch_articles()
