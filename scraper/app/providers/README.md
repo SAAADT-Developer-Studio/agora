@@ -11,8 +11,8 @@ News providers TODO:
 - [x] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
 - [x] [mladina.py](scraper/app/providers/mladina.py): Implement scraping logic.
 - [x] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement scraping logic.
-- [ ] [skandal24.py](scraper/app/providers/skandal24.py): Implement scraping logic.
-- [ ] [ljubljanskenovice.py](scraper/app/providers/ljubljanskenovice.py): Implement scraping logic.
+- [x] [ljubljanskenovice.py](scraper/app/providers/ljubljanskenovice.py): Implement scraping logic.
+- [ ] [maribor24.py](scraper/app/providers/maribor24.py): Implement scraping logic.
 - [ ] [planettv.py](scraper/app/providers/planettv.py): Implement scraping logic.
 - [ ] [slo-tech.py](scraper/app/providers/slo-tech.py): Implement scraping logic.
 - [ ] [sporttv.py](scraper/app/providers/sporttv.py): Implement scraping logic.
@@ -24,6 +24,10 @@ News providers TODO:
 ### paywalled, which sucks
 
 - [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.
+
+### No longer publishing
+
+- [ ] [skandal24.py](scraper/app/providers/skandal24.py): Stopped publishing in 2023.
 
 ### TODO: check which providers are possibly have paywalled articles
 
