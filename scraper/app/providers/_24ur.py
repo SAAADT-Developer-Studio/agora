@@ -14,7 +14,7 @@ async def fetch_page_articles(url: str) -> list[str]:
         for article in articles:
             url = article["loc"]
             last_mod = datetime.fromisoformat(article["lastmod"])
-            if "/novice/" in url and last_mod > datetime.now(last_mod.tzinfo) - timedelta(**config.TIME_WINDOW):
+            if last_mod > datetime.now(last_mod.tzinfo) - timedelta(**config.TIME_WINDOW):
                 urls.append(url)
         return urls
 
