@@ -10,7 +10,7 @@ News providers TODO:
 - [x] [svet24.py](scraper/app/providers/svet24.py):
 - [x] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
 - [x] [mladina.py](scraper/app/providers/mladina.py): Implement scraping logic.
-- [ ] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement scraping logic.
+- [x] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement scraping logic.
 - [ ] [skandal24.py](scraper/app/providers/skandal24.py): Implement scraping logic.
 - [ ] [ljubljanskenovice.py](scraper/app/providers/ljubljanskenovice.py): Implement scraping logic.
 - [ ] [planettv.py](scraper/app/providers/planettv.py): Implement scraping logic.
