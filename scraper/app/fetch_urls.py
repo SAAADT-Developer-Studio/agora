@@ -13,6 +13,7 @@ from app.providers import (
     ljubljanskenovice,
     maribor24,
     planettv,
+    slotech,
 )
 
 async def fetch_articles():
@@ -33,4 +34,5 @@ async def fetch_articles():
     # await primorskenovice.fetch_articles()
     # await ljubljanskenovice.fetch_articles()
     # await maribor24.fetch_articles()
-    await planettv.fetch_articles()
+    # await planettv.fetch_articles()
+    await slotech.fetch_articles()
