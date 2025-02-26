@@ -20,7 +20,9 @@ News providers TODO:
 - [ ] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [ ] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 
-Ideas for other news providers: https://www.times.si/
+This website already implemented article grouping by news event: https://www.times.si/
+They scrape periodicaly every 10 minutes.
+This is where we can get ideas for other news sources.
 
 ### paywalled, which sucks
 
