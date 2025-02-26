@@ -20,6 +20,8 @@ News providers TODO:
 - [ ] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [ ] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 
+Ideas for other news providers: https://www.times.si/
+
 ### paywalled, which sucks
 
 - [ ] [finance.py](scraper/app/providers/finance.py): Implement scraping logic.
@@ -28,6 +30,13 @@ News providers TODO:
 
 - [ ] [skandal24.py](scraper/app/providers/skandal24.py): Stopped publishing in 2023.
 
-### TODO: check which providers are possibly have paywalled articles
+### regional providers, maybe relevant for some localized news feature
+- [ ] koroske novice
+- [ ] primorske novice
+- [ ] ljubljanske novice
+- [ ] pomurske novice
+- [ ] ...
 
-### TODO: check edge cases where we scrape only for todays date. if we scrape every 4 hours, we can miss up to 4 hours of articles before midnight
+### TODO: 
+- [ ] check which providers are possibly have paywalled articles
+- [ ] check edge cases where we scrape only for todays date. if we scrape every 4 hours, we can miss up to 4 hours of articles before midnight
