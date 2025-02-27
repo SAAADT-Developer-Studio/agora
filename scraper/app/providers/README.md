@@ -15,6 +15,8 @@ News providers TODO:
 - [x] [maribor24.py](scraper/app/providers/maribor24.py): Implement scraping logic.
 - [x] [planettv.py](scraper/app/providers/planettv.py): Implement scraping logic.
 - [x] [slotech.py](scraper/app/providers/slotech.py): Implement scraping logic.
+- [x] [reporter.py](scraper/app/providers/reporter.py): Implement scraping logic.
+- [ ] [n1info.py](scraper/app/providers/n1info.py): Implement scraping logic.
 - [ ] [podcrto.py](scraper/app/providers/podcrto.py): Implement scraping logic.
 - [ ] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [ ] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
@@ -23,6 +25,10 @@ News providers TODO:
 This website already implemented article grouping by news event: https://www.times.si/
 They scrape periodicaly every 10 minutes.
 This is where we can get ideas for other news sources.
+
+### English, hard to cluster with the other, but still might be important
+
+- [ ] [sloveniatimes.py](scraper/app/providers/sloveniatimes.py): USE https://www.sloveniatimes.com/feed
 
 ### paywalled, which sucks
 
@@ -33,12 +39,14 @@ This is where we can get ideas for other news sources.
 - [ ] [skandal24.py](scraper/app/providers/skandal24.py): Stopped publishing in 2023.
 
 ### regional providers, maybe relevant for some localized news feature
+
 - [ ] koroske novice
 - [ ] primorske novice
 - [ ] ljubljanske novice
 - [ ] pomurske novice
 - [ ] ...
 
-### TODO: 
+### TODO:
+
 - [ ] check which providers are possibly have paywalled articles
 - [ ] check edge cases where we scrape only for todays date. if we scrape every 4 hours, we can miss up to 4 hours of articles before midnight
