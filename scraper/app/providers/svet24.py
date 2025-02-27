@@ -35,5 +35,4 @@ async def fetch_articles():
         if is_recent(date):
             article_path = article["article_path"]
             urls.append(f"{BASE_URL}{article_path}")
-            print(path, date)
     return urls

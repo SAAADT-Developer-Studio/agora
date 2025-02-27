@@ -31,5 +31,4 @@ async def fetch_articles():
             fetch_page_articles(second_last_page["loc"]),
         )
         urls = list(itertools.chain(*results))
-        print(urls)
         return urls
