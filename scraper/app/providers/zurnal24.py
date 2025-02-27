@@ -17,5 +17,4 @@ async def fetch_articles():
             article_url = article["link"]
             if is_recent(date):
                 urls.append(article_url)
-        print(urls)
         return urls

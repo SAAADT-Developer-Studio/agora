@@ -17,6 +17,7 @@ from app.providers import (
     reporter,
     n1info,
     zurnal24,
+    slovenskenovice,
 )
 
 async def fetch_articles():
@@ -41,4 +42,5 @@ async def fetch_articles():
     # await slotech.fetch_articles()
     # await reporter.fetch_articles()
     # await n1info.fetch_articles()
-    await zurnal24.fetch_articles()
+    # await zurnal24.fetch_articles()
+    await slovenskenovice.fetch_articles()
