@@ -20,7 +20,7 @@ News providers TODO:
 - [ ] [podcrto.py](scraper/app/providers/podcrto.py): Implement scraping logic.
 - [x] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
-- [ ] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
+- [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 
 This website already implemented article grouping by news event: https://www.times.si/
 They scrape periodicaly every 10 minutes.
