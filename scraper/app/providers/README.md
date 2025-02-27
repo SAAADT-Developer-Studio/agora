@@ -18,7 +18,7 @@ News providers TODO:
 - [x] [reporter.py](scraper/app/providers/reporter.py): Implement scraping logic.
 - [x] [n1info.py](scraper/app/providers/n1info.py): Implement scraping logic.
 - [ ] [podcrto.py](scraper/app/providers/podcrto.py): Implement scraping logic.
-- [ ] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
+- [x] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [ ] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [ ] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 
