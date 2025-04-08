@@ -21,6 +21,11 @@ News providers TODO:
 - [x] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
+- [ ] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
+
+TODO:
+
+Go over all providers again and use rss if possible.
 
 This website already implemented article grouping by news event: https://www.times.si/
 They scrape periodicaly every 10 minutes.
