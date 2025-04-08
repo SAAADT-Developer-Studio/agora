@@ -26,6 +26,9 @@ News providers TODO:
 TODO:
 
 Go over all providers again and use rss if possible.
+You can typically find it by viewing the page source and looking for <link> tags with rel="alternate" and type="application/rss+xml" or type="application/atom+xml"
+
+- dnevnik https://www.dnevnik.si/rss.xml
 
 This website already implemented article grouping by news event: https://www.times.si/
 They scrape periodicaly every 10 minutes.
