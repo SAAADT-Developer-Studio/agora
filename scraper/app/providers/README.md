@@ -23,6 +23,9 @@ News providers TODO:
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 - [ ] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
 
+Idea: include government feeds, for example FURS
+https://www.fu.gov.si/rss
+
 TODO:
 
 Go over all providers again and use rss if possible.
