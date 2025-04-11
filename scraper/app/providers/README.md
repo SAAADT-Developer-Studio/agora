@@ -22,7 +22,7 @@ News providers TODO:
 - [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 - [ ] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
-- [ ] [forbes.n1info] (scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
+- [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 
 Idea: include government feeds, for example FURS
 https://www.fu.gov.si/rss
