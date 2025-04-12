@@ -1,6 +1,5 @@
 from datetime import datetime
 from app.utils import is_recent
-from app.extractor import extract
 import xmltodict
 import httpx
 

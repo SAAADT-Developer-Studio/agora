@@ -1,6 +1,6 @@
 from datetime import datetime
 from app.utils import is_recent
-from app.extractor import extract
+from app.extractor.crawl4ai import extract
 
 BASE_URL = "https://primorske.svet24.si"
 # TODO: handle edge case of articles that are not in the current year

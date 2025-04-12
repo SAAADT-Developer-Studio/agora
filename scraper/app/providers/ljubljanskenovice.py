@@ -1,33 +1,16 @@
-from datetime import datetime
 from app.utils import is_recent
-from app.extractor import extract
+from app.feeds.fetch_rss_feed import fetch_rss_feed
+from datetime import datetime
 
-BASE_URL = "https://ljnovice.si"
+BASE_URL = "https://ljnovice.si/feed/"
+
 
 async def fetch_articles():
-    url=f"{BASE_URL}/news-sitemap.xml"
-    schema = {
-        "name": "Article urls",
-        "baseSelector": "tr",
-        "fields": [
-            {
-                "name": "article_path",
-                "selector": "a",
-                "type": "attribute",
-                "attribute": "href"
-            },
-            {
-                "name": "date",
-                "selector": "td:nth-child(4)",
-                "type": "text",
-            },
-        ]
-    }
-    data = await extract(url, schema)
+    articles = await fetch_rss_feed(BASE_URL)
     urls = []
-    for article in data:
-        date = datetime.fromisoformat(article["date"])
+    for article in articles:
+        date_format = "%a, %d %b %Y %H:%M:%S %z"
+        date = datetime.strptime(article["published"], date_format)
         if is_recent(date):
-            article_url = article["article_path"]
-            urls.append(article_url)
+            urls.append(article["link"])
     return urls

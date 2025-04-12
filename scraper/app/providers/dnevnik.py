@@ -1,24 +1,16 @@
+from app.utils import is_recent
+from app.feeds.fetch_rss_feed import fetch_rss_feed
+from datetime import datetime
 
-from app.extractor import extract
+BASE_URL = "https://www.dnevnik.si/rss.xml"
 
-BASE_URL = "https://www.dnevnik.si"
 
 async def fetch_articles():
-    url=f"{BASE_URL}/najnovejse"
-    schema = {
-        "name": "Article urls",
-        "baseSelector": ".se-card--link",
-        "fields": [
-            {
-                "name": "article_path",
-                "type": "attribute",
-                "attribute": "href"
-            },
-        ]
-    }
-    data = await extract(url, schema)
+    articles = await fetch_rss_feed(BASE_URL)
     urls = []
-    for article in data[:15]:
-        article_path = article["article_path"]
-        urls.append(f"{BASE_URL}{article_path}")
+    for article in articles:
+        date_format = "%Y-%m-%d %H:%M:%S"
+        date = datetime.strptime(article["published"], date_format)
+        if is_recent(date):
+            urls.append(article["link"])
     return urls

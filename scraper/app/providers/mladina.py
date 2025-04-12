@@ -1,36 +1,17 @@
-from datetime import datetime
 from app.utils import is_recent
-from app.extractor import extract
+from app.feeds.fetch_rss_feed import fetch_rss_feed
+from datetime import datetime
 
-BASE_URL = "https://www.mladina.si"
+BASE_URL = "https://feeds.feedburner.com/Mladina"
+
 
 async def fetch_articles():
-    url=f"{BASE_URL}"
-    schema = {
-        "name": "Article urls",
-        "baseSelector": ".articles .item",
-        "fields": [
-            {
-                "name": "article_path",
-                "selector": ".image a",
-                "type": "attribute",
-                "attribute": "href"
-            },
-            {
-                "name": "date",
-                "selector": "[name=\"info\"]",
-                "type": "attribute",
-                "attribute": "data-c-date",
-            },
-        ]
-    }
-    data = await extract(url, schema)
+    articles = await fetch_rss_feed(BASE_URL)
     urls = []
-    for article in data:
-        date = datetime.strptime(article["date"], "%d. %m. %Y")
-        if "article_path" not in article or "date" not in article:
-            continue
-        article_url = f"{BASE_URL}{article["article_path"]}"
-        if date.date() == datetime.now().date():
-            urls.append(article_url)
+    for article in articles:
+        date_format = "%a, %d %b %Y %H:%M:%S GMT"
+
+        date = datetime.strptime(article["published"], date_format)
+        if is_recent(date):
+            urls.append(article["link"])
     return urls
