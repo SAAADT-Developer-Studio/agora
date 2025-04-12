@@ -30,9 +30,21 @@ class Database:
             self.articles_table.put_item(
                 Item=item,
             )
-            print(f"Item added successfully: {item}")
+            print(f"Item added successfully")
         except Exception as e:
             print(f"Error adding item: {e}")
+
+    def items_exists(self, url):
+        """
+        Checks if an item exists in the DynamoDB table.
+        """
+        try:
+            response = self.articles_table.get_item(
+                Key={"url": url},
+            )
+            return "Item" in response
+        except Exception as e:
+            return False
 
 
 # class Article(SQLModel, table=True):
