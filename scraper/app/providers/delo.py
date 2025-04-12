@@ -1,33 +1,16 @@
-from datetime import datetime
 from app.utils import is_recent
-from app.extractor import extract
+from app.feeds.fetch_rss_feed import fetch_rss_feed
+from datetime import datetime
 
-BASE_URL = "https://www.delo.si"
+BASE_URL = "https://www.delo.si/rss"
+
 
 async def fetch_articles():
-    url=f"{BASE_URL}/arhiv"
-    schema = {
-        "name": "Article urls",
-        "baseSelector": "div.archive_teaser",
-        "fields": [
-            {
-                "name": "article_path",
-                "selector": "a.teaser_link",
-                "type": "attribute",
-                "attribute": "href"
-            },
-            {
-                "name": "date",
-                "selector": "span.datetime",
-                "type": "text",
-            },
-        ]
-    }
-    data = await extract(url, schema)
+    articles = await fetch_rss_feed(BASE_URL)
     urls = []
-    for article in data:
-        date = datetime.strptime(article["date"], '%d. %m. %Y| %H:%M')
+    for article in articles:
+        date_format = "%a, %d %b %Y %H:%M:%S %z"
+        date = datetime.strptime(article["published"], date_format)
         if is_recent(date):
-            article_path = article["article_path"]
-            urls.append(f"{BASE_URL}{article_path}")
+            urls.append(article["link"])
     return urls

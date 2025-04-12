@@ -1,32 +1,50 @@
 import asyncio
 import dotenv
 
-from app.extractor import extract_article
-from app.models import Article
-from app.database import connect_db
-from sqlmodel import Session
-from app.fetch_urls import fetch_articles
+from app.extractor.extract_article import Extractor
+from app.database import Database
+
+from app.feeds.fetch_articles import fetch_articles
+import argparse
+import logging
+from datetime import datetime
+from pprint import pprint
+
 
 async def main():
     dotenv.load_dotenv()
-    engine = connect_db()
 
-    articles = await fetch_articles()
-    exit()
-    article = await extract_article(
-        "https://www.24ur.com/novice/gospodarstvo/ameriska-centralna-banka-ohranila-kljucno-obrestno-mero.html"
+    parser = argparse.ArgumentParser(description="Article Scraper")
+
+    parser.add_argument(
+        "--providers",
+        type=lambda s: s.split(","),
+        help="Comma-separated list of providers (e.g., provider1,provider2,provider3)",
     )
-    with Session(engine) as session:
-        session.add(
-            Article(
-                title=article.title,
-                author=article.author,
-                summary=article.summary,
-                content=article.content,
-                num_comments=article.num_comments,
-            )
-        )
-        session.commit()
+
+    args = parser.parse_args()
+    providers = args.providers
+
+    article_urls = await fetch_articles(providers)
+
+    extractor = Extractor()
+    db = Database()
+
+    # TODO: add concurrency, retries, timeout, error handling
+    for url in article_urls[:1]:
+        # TODO: if article already in db, skip
+        print(f"Processing article: {url}")
+        # TODO: better error handling
+        try:
+            # TODO: switch to gemini
+            content = await extractor.extract_article(url)
+            dict_content = content.model_dump()
+            dict_content["url"] = url
+            dict_content["created_at"] = int(datetime.now().timestamp())
+            pprint(dict_content)
+            db.put_item(dict_content)
+        except Exception as e:
+            logging.error(f"Error extracting article from {url}: {e}")
 
 
 if __name__ == "__main__":

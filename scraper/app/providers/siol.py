@@ -1,35 +1,16 @@
 from datetime import datetime
 from app.utils import is_recent
-from app.extractor import extract
+from app.feeds.fetch_rss_feed import fetch_rss_feed
 
-BASE_URL = "https://siol.net"
+BASE_URL = "https://siol.net/feeds/latest"
+
 
 async def fetch_articles():
-    url=f"{BASE_URL}/pregled-dneva"
-    schema = {
-        "name": "Article urls",
-        "baseSelector": ".timeline_page__article",
-        "fields": [
-            {
-                "name": "article_path",
-                "selector": "a.card__link",
-                "type": "attribute",
-                "attribute": "href"
-            },
-            {
-                "name": "date",
-                "selector": "p.timeline_page__article_wrap_info_time",
-                "type": "text",
-            },
-        ]
-    }
-    data = await extract(url, schema)
+    articles = await fetch_rss_feed(BASE_URL)
     urls = []
-    for article in data:
-        date = datetime.now()
-        hour, minute = map(int, article["date"].split("."))
-        date = date.replace(hour=hour, minute=minute)
+    for article in articles:
+        date_format = "%a, %d %b %Y %H:%M:%S %z"
+        date = datetime.strptime(article["published"], date_format)
         if is_recent(date):
-            article_path = article["article_path"]
-            urls.append(f"{BASE_URL}{article_path}")
+            urls.append(article["link"])
     return urls
