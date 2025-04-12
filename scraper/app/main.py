@@ -32,7 +32,6 @@ async def main():
 
     # TODO: add concurrency, retries, timeout, error handling
     for url in article_urls:
-        # TODO: if article already in db, skip
         if db.items_exists(url):
             print(f"Article already exists in DB: {url}")
             continue
