@@ -31,12 +31,14 @@ async def main():
     db = Database()
 
     # TODO: add concurrency, retries, timeout, error handling
-    for url in article_urls[:1]:
+    for url in article_urls:
         # TODO: if article already in db, skip
+        if db.items_exists(url):
+            print(f"Article already exists in DB: {url}")
+            continue
         print(f"Processing article: {url}")
         # TODO: better error handling
         try:
-            # TODO: switch to gemini
             content = await extractor.extract_article(url)
             dict_content = content.model_dump()
             dict_content["url"] = url

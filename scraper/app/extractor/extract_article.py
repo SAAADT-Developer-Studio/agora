@@ -16,9 +16,12 @@ class Article(BaseModel):
 
 class Extractor:
     def __init__(self):
-        if not os.environ.get("OPENAI_API_KEY"):
-            os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
-        llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+        # if not os.environ.get("OPENAI_API_KEY"):
+        #     os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
+        # llm = init_chat_model("gpt-4o-mini", model_provider="openai")
+        if not os.environ.get("GOOGLE_API_KEY"):
+            os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter API key for Gemini: ")
+        llm = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
         self.structured_llm = llm.with_structured_output(Article)
 
     # TODO: return Article object, not dict
