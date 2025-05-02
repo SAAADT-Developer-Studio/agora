@@ -27,6 +27,8 @@ News providers TODO:
 Idea: include government feeds, for example FURS
 https://www.fu.gov.si/rss
 
+A news site for all slovenian news sites: https://www.telex.si/viri.php
+
 TODO:
 
 Go over all providers again and use rss if possible.
