@@ -23,6 +23,7 @@ News providers TODO:
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 - [ ] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
+- [ ] [bloombergadria](https://si.bloombergadria.com/rss)
 
 Idea: include government feeds, for example FURS
 https://www.fu.gov.si/rss
