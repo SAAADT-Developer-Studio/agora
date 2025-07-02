@@ -26,7 +26,7 @@ async def main():
     providers = args.providers
 
     article_urls = await fetch_articles(providers)
-
+    # TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
     extractor = Extractor()
     db = Database()
 
