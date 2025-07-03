@@ -27,7 +27,8 @@ async def main():
 
     article_urls = await fetch_articles(providers)
     # TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
-    # or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package)
+    # or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
+    # after that we can use some sort of Markdown react component to render the markdown in the web app
     extractor = Extractor()
     db = Database()
 
