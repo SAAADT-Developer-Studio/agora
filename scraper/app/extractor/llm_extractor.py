@@ -1,38 +1,18 @@
 import os
-from pprint import pprint
-from pydantic import BaseModel, Field
 import os
 import getpass
 from langchain.chat_models import init_chat_model
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 import httpx
-import html2text
+from scraper.app.extractor.extractor import Article, Extractor
+
 from langchain.globals import set_debug
-from abc import ABC, abstractmethod
+import html2text
 
 # set_debug(True)
 
 
-class Article(BaseModel):
-    """Class representing an article with its attributes."""
-
-    title: str = Field(description="Title of the article")
-    author: str = Field(description="Author of the article")
-    deck: str = Field(description="Deck of the article, a summary or brief description")
-    content: str = Field(description="Full content of the article")
-    num_comments: int = Field(
-        description="Number of comments on the article", default=0
-    )
-    is_error: bool = False
-
-
-class Extractor(ABC):
-    @abstractmethod
-    async def extract_article(self, url: str) -> Article:
-        pass
-
-
-class LlmExtractor:
+class LlmExtractor(Extractor):
     def __init__(self):
         # if not os.environ.get("OPENAI_API_KEY"):
         #     os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
@@ -63,7 +43,6 @@ class LlmExtractor:
                 Here is the markdown of the article:
                 {content}
                 """
-            # pprint(prompt)
             print(self.llm.get_num_tokens(prompt), url)
             return self.structured_llm.invoke(prompt)
 

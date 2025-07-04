@@ -1,7 +1,8 @@
 import asyncio
 import dotenv
 
-from app.extractor.extract_article import Extractor, LlmExtractor
+from scraper.app.extractor.extractor import Extractor
+from scraper.app.extractor.llm_extractor import LlmExtractor
 from app.database import Database
 
 from app.feeds.fetch_articles import fetch_articles
@@ -30,7 +31,7 @@ async def main():
     # TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
     # or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
     # after that we can use some sort of Markdown react component to render the markdown in the web app
-    extractor = LlmExtractor()
+    extractor: Extractor = LlmExtractor()
     db = Database()
 
     # TODO: add concurrency, retries, timeout, error handling
