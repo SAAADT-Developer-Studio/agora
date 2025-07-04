@@ -1,28 +1,39 @@
 News providers TODO:
 
-- [x] [24ur.py](scraper/app/providers/_24ur.py): Verify and improve fetching articles.
+- [x] [24ur.py](scraper/app/providers/_24ur.py): Verify and improve fetching
+      articles.
 - [x] [rtv.py](scraper/app/providers/rtv.py): Implement scraping logic.
 - [x] [delo.py](scraper/app/providers/delo.py): Implement scraping logic.
 - [x] [siol.py](scraper/app/providers/siol.py): Implement scraping logic.
-- [x] [nova24tv.py](scraper/app/providers/nova24tv.py): Implement scraping logic.
-- [x] [necenzurirano.py](scraper/app/providers/necenzurirano.py): Implement scraping logic.
+- [x] [nova24tv.py](scraper/app/providers/nova24tv.py): Implement scraping
+      logic.
+- [x] [necenzurirano.py](scraper/app/providers/necenzurirano.py): Implement
+      scraping logic.
 - [x] [dnevnik.py](scraper/app/providers/dnevnik.py): Implement scraping logic.
 - [x] [svet24.py](scraper/app/providers/svet24.py):
 - [x] [vecer.py](scraper/app/providers/vecer.py): Implement scraping logic.
 - [x] [mladina.py](scraper/app/providers/mladina.py): Implement scraping logic.
-- [x] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement scraping logic.
-- [x] [ljubljanskenovice.py](scraper/app/providers/ljubljanskenovice.py): Implement scraping logic.
-- [x] [maribor24.py](scraper/app/providers/maribor24.py): Implement scraping logic.
-- [x] [planettv.py](scraper/app/providers/planettv.py): Implement scraping logic.
+- [x] [primorskenovice.py](scraper/app/providers/primorskenovice.py): Implement
+      scraping logic.
+- [x] [ljubljanskenovice.py](scraper/app/providers/ljubljanskenovice.py):
+      Implement scraping logic.
+- [x] [maribor24.py](scraper/app/providers/maribor24.py): Implement scraping
+      logic.
+- [x] [planettv.py](scraper/app/providers/planettv.py): Implement scraping
+      logic.
 - [x] [slotech.py](scraper/app/providers/slotech.py): Implement scraping logic.
-- [x] [reporter.py](scraper/app/providers/reporter.py): Implement scraping logic.
+- [x] [reporter.py](scraper/app/providers/reporter.py): Implement scraping
+      logic.
 - [x] [n1info.py](scraper/app/providers/n1info.py): Implement scraping logic.
 - [ ] [podcrto.py](scraper/app/providers/podcrto.py): Implement scraping logic.
-- [x] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
-- [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
+- [x] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping
+      logic.
+- [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement
+      scraping logic.
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 - [ ] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
-- [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
+- [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py)
+      https://forbes.n1info.si/
 - [ ] [bloombergadria](https://si.bloombergadria.com/rss)
 - [ ] [demokracija](https://demokracija.si/) https://demokracija.si/
 - [ ] [insajder](https://insajder.com/)
@@ -30,26 +41,48 @@ News providers TODO:
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
 - [ ] [politikis](https://www.politikis.si/)
 - [ ] [monitor](https://www.monitor.si/)
+- [ ] [dolenjski list](https://dolenjskilist.svet24.si)
+- [ ] [gorenjski glas](https://www.gorenjskiglas.si)
+- [ ] [ekipa24](https://ekipa.svet24.si)
+- [ ] [moja-dolenjska](https://moja-dolenjska.si/)
+- [ ] [domovina](https://www.domovina.je/)
+- [ ] [casnik](https://casnik.si)
+- [ ] [študent](https://www.student.si/)
+- [ ] [pomurec](https://pomurec.com/)
+- [ ] [pozareport](https://pozareport.si)
+- [ ] [primorski dnevnik](https://www.primorski.eu)
+- [ ] [islamska skupnost novice](https://www.islamska-skupnost.si/novice/)
+- [ ] [sobota info](https://sobotainfo.com/novice)
+- [ ] [celjske novice](https://www.celje.info)
+- [ ] [regional obala](https://www.regionalobala.si)
+- [ ] [velenjcan](https://www.velenjcan.si)
+- [ ] [ptujinfo](https://ptujinfo.com)
+- [ ] [kamniške novice](https://www.kamnik.info/novice_kamnik/)
+- [ ] [zasavske online novice](https://zon.si)
+- [ ] [domžalske novice](https://www.domzalske-novice.si)
+- [ ] [škofje loške novice](https://loske-novice.si)
+- [ ] [lokalne goriške novice](https://www.robin.si/kategorija/lokalne-novice/)
 
-Idea: include government feeds, for example FURS
-https://www.fu.gov.si/rss
+Idea: include government feeds, for example FURS https://www.fu.gov.si/rss
 
 A news site for all slovenian news sites: https://www.telex.si/viri.php
 
 TODO:
 
-Go over all providers again and use rss if possible.
-You can typically find it by viewing the page source and looking for <link> tags with rel="alternate" and type="application/rss+xml" or type="application/atom+xml"
+Go over all providers again and use rss if possible. You can typically find it
+by viewing the page source and looking for <link> tags with rel="alternate" and
+type="application/rss+xml" or type="application/atom+xml"
 
 - dnevnik https://www.dnevnik.si/rss.xml
 
-This website already implemented article grouping by news event: https://www.times.si/
-They scrape periodicaly every 10 minutes.
-This is where we can get ideas for other news sources.
+This website already implemented article grouping by news event:
+https://www.times.si/ They scrape periodicaly every 10 minutes. This is where we
+can get ideas for other news sources.
 
 ### English, hard to cluster with the other, but still might be important
 
-- [ ] [sloveniatimes.py](scraper/app/providers/sloveniatimes.py): USE https://www.sloveniatimes.com/feed
+- [ ] [sloveniatimes.py](scraper/app/providers/sloveniatimes.py): USE
+      https://www.sloveniatimes.com/feed
 
 ### paywalled, which sucks
 
@@ -57,7 +90,8 @@ This is where we can get ideas for other news sources.
 
 ### No longer publishing
 
-- [ ] [skandal24.py](scraper/app/providers/skandal24.py): Stopped publishing in 2023.
+- [ ] [skandal24.py](scraper/app/providers/skandal24.py): Stopped publishing
+      in 2023.
 
 ### regional providers, maybe relevant for some localized news feature
 
@@ -70,4 +104,5 @@ This is where we can get ideas for other news sources.
 ### TODO:
 
 - [ ] check which providers are possibly have paywalled articles
-- [ ] check edge cases where we scrape only for todays date. if we scrape every 4 hours, we can miss up to 4 hours of articles before midnight
+- [ ] check edge cases where we scrape only for todays date. if we scrape every
+  4 hours, we can miss up to 4 hours of articles before midnight
