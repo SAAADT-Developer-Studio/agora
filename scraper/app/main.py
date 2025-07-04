@@ -1,8 +1,9 @@
 import asyncio
 import dotenv
 
-from scraper.app.extractor.extractor import Extractor
-from scraper.app.extractor.llm_extractor import LlmExtractor
+from app.extractor.extractor import Extractor
+from app.extractor.llm_extractor import LlmExtractor
+from app.extractor.readability_extractor import ReadabilityExtractor
 from app.database import Database
 
 from app.feeds.fetch_articles import fetch_articles
@@ -31,20 +32,21 @@ async def main():
     # TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
     # or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
     # after that we can use some sort of Markdown react component to render the markdown in the web app
-    extractor: Extractor = LlmExtractor()
+    # extractor: Extractor = LlmExtractor()
+    extractor: Extractor = ReadabilityExtractor()
     db = Database()
 
     # TODO: add concurrency, retries, timeout, error handling
     articles = []
     for url in article_urls:
-        if db.items_exists(url):
-            print(f"Article already exists in DB: {url}")
-            continue
+        # if db.items_exists(url):
+        #     print(f"Article already exists in DB: {url}")
+        #     continue
         article = await process_article(url, extractor)
         if article:
             articles.append(article)
 
-    await generate_embeddings(articles)  # TODO: errors
+    # await generate_embeddings(articles)  # TODO: errors
     db.bulk_put(articles)
 
 
