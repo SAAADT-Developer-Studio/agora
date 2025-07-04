@@ -34,6 +34,18 @@ class Database:
         except Exception as e:
             print(f"Error adding item: {e}")
 
+    def bulk_put(self, items):
+        """
+        Inserts multiple items into the DynamoDB table.
+        """
+        try:
+            with self.articles_table.batch_writer() as batch:
+                for item in items:
+                    batch.put_item(Item=item)
+            print(f"Items added successfully")
+        except Exception as e:
+            print(f"Error adding items: {e}")
+
     def items_exists(self, url):
         """
         Checks if an item exists in the DynamoDB table.
