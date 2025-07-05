@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app import config
 from app.providers.providers import PROVIDERS
-from app.providers.news_provider import NewsProvider
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 # TODO: move these to config.py
 
@@ -22,29 +22,29 @@ def is_recent(date: datetime) -> bool:
     stop=stop_after_attempt(RETRY_ATTEMPTS),
     wait=wait_exponential(multiplier=1, min=1, max=10),
 )
-async def fetch(provider: NewsProvider, name: str):
+async def fetch(provider: NewsProvider):
     async with semaphore:
-        logging.info(f"Fetching articles from {name}...")
+        logging.info(f"Fetching articles from {provider.key}...")
         articles = await provider.fetch_articles()
         return [article for article in articles if is_recent(article.published_at)]
 
 
 async def fetch_articles(provider_keys: list[str] | None = None):
     # TODO: implement error handling and retries
-    providers_map = {provider.name: provider for provider in PROVIDERS}
+    providers_map = {provider.key: provider for provider in PROVIDERS}
 
     if not provider_keys:
         provider_keys = list(providers_map.keys())
 
-    tasks = [fetch(providers_map[name], name) for name in provider_keys]
+    tasks = [fetch(providers_map[key]) for key in provider_keys]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    successes: list[str] = []
+    successes: list[ArticleMetadata] = []
 
-    for name, result in zip(provider_keys, results):
+    for provider_key, result in zip(provider_keys, results):
         if isinstance(result, Exception):
-            logging.error(f"Failed to fetch from {name}: {result}")
+            logging.error(f"Failed to fetch from {provider_key}: {result}")
         elif isinstance(result, list):
             successes.extend(result)
-            logging.info(f"Fetched {len(result)} articles from {name}")
+            logging.info(f"Fetched {len(result)} articles from {provider_key}")
 
     return successes

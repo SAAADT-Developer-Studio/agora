@@ -3,12 +3,13 @@ import xmltodict
 import httpx
 
 
-from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 
 class N1InfoProvider(NewsProvider):
     def __init__(self):
         super().__init__(
+            key="n1info",
             name="N1 Info",
             url="https://n1info.si",
             rss_feeds=["https://n1info.si/feed"],

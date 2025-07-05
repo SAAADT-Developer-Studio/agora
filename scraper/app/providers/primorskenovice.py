@@ -2,12 +2,13 @@ from datetime import datetime
 from app.extractor.crawl4ai import extract
 
 
-from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 
 class PrimorskeNoviceProvider(NewsProvider):
     def __init__(self):
         super().__init__(
+            key="primorskenovice",
             name="Primorske Novice",
             url="https://primorske.svet24.si",
             rss_feeds=["https://www.planet-tv.si/rss"],

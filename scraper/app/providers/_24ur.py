@@ -5,12 +5,13 @@ from datetime import datetime, timedelta
 import itertools
 from app import config
 
-from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 
 class _24URProvider(NewsProvider):
     def __init__(self):
         super().__init__(
+            key="24ur",
             name="24ur",
             url="https://www.24ur.com",
             rss_feeds=["https://www.24ur.com/rss"],

@@ -1,13 +1,14 @@
 import xmltodict
 import httpx
 
-from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 
 class PlanetTVProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            name="N1 Info",
+            key="planettv",
+            name="Planet TV",
             url="https://www.planet-tv.si",
             rss_feeds=["https://www.planet-tv.si/rss"],
         )

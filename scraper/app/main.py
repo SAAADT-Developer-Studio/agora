@@ -16,6 +16,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 async def main():
     dotenv.load_dotenv()
+    logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(description="Article Scraper")
 
@@ -26,23 +27,36 @@ async def main():
     )
 
     args = parser.parse_args()
-    providers = args.providers
 
-    article_urls = await fetch_articles(providers)
+    providers: str | None = args.providers
+    extractor: Extractor = ReadabilityExtractor()
+    db = Database()
+
+    await process(
+        extractor=extractor,
+        db=db,
+        providers=providers,
+    )
+
+
+async def process(
+    extractor: Extractor,
+    db: Database,
+    providers: list[str] | None,
+):
+    article_metadatas = await fetch_articles(providers)
     # TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
     # or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
     # after that we can use some sort of Markdown react component to render the markdown in the web app
     # extractor: Extractor = LlmExtractor()
-    extractor: Extractor = ReadabilityExtractor()
-    db = Database()
 
     # TODO: add concurrency, retries, timeout, error handling
     articles = []
-    for url in article_urls:
-        # if db.items_exists(url):
-        #     print(f"Article already exists in DB: {url}")
-        #     continue
-        article = await process_article(url, extractor)
+    for article_metadata in article_metadatas:
+        if db.items_exists(article_metadata.link):
+            print(f"Article already exists in DB: {article_metadata.link}")
+            continue
+        article = await process_article(article_metadata.link, extractor)
         if article:
             articles.append(article)
 

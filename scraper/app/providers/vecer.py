@@ -2,12 +2,13 @@ from datetime import datetime, timedelta
 import httpx
 
 
-from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 
 class VecerProvider(NewsProvider):
     def __init__(self):
         super().__init__(
+            key="vecer",
             name="Večer",
             url="https://vecer.com",
             rss_feeds=["https://feeds.feedburner.com/vecer"],
