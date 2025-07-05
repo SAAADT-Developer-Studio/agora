@@ -1,25 +1,37 @@
+from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+
 from datetime import datetime
-from app.utils import is_recent
 import xmltodict
 import httpx
 
-BASE_URL = "https://nova24tv.si"
 # category sitemap https://nova24tv.si/category-sitemap.xml
 
 
-async def fetch_articles():
-    url = f"{BASE_URL}/post-sitemap.xml"
-    async with httpx.AsyncClient() as client:
-        client.headers["User-Agent"] = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+class Nova24TVProvider(NewsProvider):
+    def __init__(self):
+        super().__init__(
+            name="Nova24TV",
+            url="https://nova24tv.si",
+            rss_feeds=["https://nova24tv.si/feed"],
         )
-        response = await client.get(url)
-        document = xmltodict.parse(response.text)
-        articles = document["urlset"]["url"]
-        urls = []
-        for article in articles:
-            article_url = article["loc"]
-            last_mod = datetime.fromisoformat(article["lastmod"])
-            if is_recent(last_mod):
-                urls.append(article_url)
-        return urls
+
+    # async def fetch_articles(self) -> list[ArticleMetadata]:
+    #     url = f"{self.url}/post-sitemap.xml"
+    #     async with httpx.AsyncClient() as client:
+    #         client.headers["User-Agent"] = (
+    #             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    #         )
+    #         response = await client.get(url)
+    #         document = xmltodict.parse(response.text)
+    #         article_docs = document["urlset"]["url"]
+    #         articles: list[ArticleMetadata] = []
+    #         for article in article_docs:
+    #             article_url: str = article["loc"]
+    #             last_mod = datetime.fromisoformat(article["lastmod"])
+    #             articles.append(
+    #                 ArticleMetadata(
+    #                     link=article_url,
+    #                     published_at=last_mod,
+    #                 )
+    #             )
+    #         return articles

@@ -1,20 +1,10 @@
-import xmltodict
-import httpx
-from datetime import datetime
-from app.utils import is_recent
+from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
 
-BASE_URL = "https://www.slovenskenovice.si"
 
-async def fetch_articles():
-    url = f"{BASE_URL}/rss"
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
-        document = xmltodict.parse(response.text)
-        articles = document["rss"]["channel"]["item"]
-        urls = []
-        for article in articles:
-            date = datetime.strptime(article["pubDate"], "%a, %d %b %Y %H:%M:%S %z")
-            article_url = article["link"]
-            if is_recent(date):
-                urls.append(article_url)
-        return urls
+class SlovenskeNoviceProvider(NewsProvider):
+    def __init__(self):
+        super().__init__(
+            name="Slovenske Novice",
+            url="https://www.slovenskenovice.si",
+            rss_feeds=["https://www.slovenskenovice.si/rss"],
+        )

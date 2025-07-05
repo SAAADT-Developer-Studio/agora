@@ -21,15 +21,16 @@ News providers TODO:
 - [x] [zurnal24.py](scraper/app/providers/zurnal24.py): Implement scraping logic.
 - [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py): Implement scraping logic.
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
-- [ ] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
+- [x] [bloombergadria](https://si.bloombergadria.com/rss)
+- [x] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
-- [ ] [bloombergadria](https://si.bloombergadria.com/rss)
-- [ ] [demokracija](https://demokracija.si/) https://demokracija.si/
+- [x] [demokracija](https://demokracija.si/) https://demokracija.si/
 - [ ] [insajder](https://insajder.com/)
 - [ ] [regional](https://www.regionalobala.si/)
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
 - [ ] [politikis](https://www.politikis.si/)
 - [ ] [monitor](https://www.monitor.si/)
+- [ ] [primorski](https://www.primorski.eu/)
 
 Idea: include government feeds, for example FURS
 https://www.fu.gov.si/rss

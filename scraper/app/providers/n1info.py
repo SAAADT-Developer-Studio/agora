@@ -1,21 +1,33 @@
 from datetime import datetime
-from app.utils import is_recent
 import xmltodict
 import httpx
 
-BASE_URL = "https://n1info.si"
 
-async def fetch_articles():
-    url = f"{BASE_URL}/sitemap/sitemap_n1infoslovenia_post_1.xml"
-    async with httpx.AsyncClient() as client:
-        # client.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-        response = await client.get(url)
-        document = xmltodict.parse(response.text)
-        articles = document["urlset"]["url"]
-        urls = []
-        for article in articles:
-            article_url = article["loc"]
-            last_mod = datetime.fromisoformat(article["lastmod"])
-            if is_recent(last_mod):
-                urls.append(article_url)
-        return urls
+from scraper.app.providers.news_provider import NewsProvider, ArticleMetadata
+
+
+class N1InfoProvider(NewsProvider):
+    def __init__(self):
+        super().__init__(
+            name="N1 Info",
+            url="https://n1info.si",
+            rss_feeds=["https://n1info.si/feed"],
+        )
+
+    # async def fetch_articles(self) -> list[ArticleMetadata]:
+    #     url = f"{self.url}/sitemap/sitemap_n1infoslovenia_post_1.xml"
+    #     async with httpx.AsyncClient() as client:
+    #         response = await client.get(url)
+    #         document = xmltodict.parse(response.text)
+    #         articles = document["urlset"]["url"]
+    #         urls: list[ArticleMetadata] = []
+    #         for article in articles:
+    #             article_url: str = article["loc"]
+    #             last_mod = datetime.fromisoformat(article["lastmod"])
+    #             urls.append(
+    #                 ArticleMetadata(
+    #                     link=article_url,
+    #                     published_at=last_mod,
+    #                 )
+    #             )
+    #         return articles
