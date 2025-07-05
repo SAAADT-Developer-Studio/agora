@@ -1,29 +1,10 @@
-from app.providers import (
-    _24ur,
-    rtv,
-    delo,
-    siol,
-    nova24tv,
-    necenzurirano,
-    dnevnik,
-    svet24,
-    vecer,
-    mladina,
-    primorskenovice,
-    ljubljanskenovice,
-    maribor24,
-    planettv,
-    slotech,
-    reporter,
-    n1info,
-    zurnal24,
-    slovenskenovice,
-    sta,
-)
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from tenacity import retry, stop_after_attempt, wait_exponential
-from collections.abc import Callable, Awaitable
+from app import config
+from app.providers.providers import PROVIDERS
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 # TODO: move these to config.py
 
@@ -32,60 +13,38 @@ RETRY_ATTEMPTS = 3
 
 semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-type RssFetcher = Callable[[], Awaitable[list[str]]]
+
+def is_recent(date: datetime) -> bool:
+    return date > datetime.now(date.tzinfo) - timedelta(**config.TIME_WINDOW)
 
 
 @retry(
     stop=stop_after_attempt(RETRY_ATTEMPTS),
     wait=wait_exponential(multiplier=1, min=1, max=10),
 )
-async def fetch(fetch_func: RssFetcher, name: str):
+async def fetch(provider: NewsProvider):
     async with semaphore:
-        print(f"Fetching articles from {name}...")
-        return await fetch_func()
+        logging.info(f"Fetching articles from {provider.key}...")
+        articles = await provider.fetch_articles()
+        return [article for article in articles if is_recent(article.published_at)]
 
 
-# TODO: probably refactor and rename these
-PROVIDER_RSS_FETCHERS: dict[str, RssFetcher] = {
-    "24ur": _24ur.fetch_articles,
-    "rtv": rtv.fetch_articles,
-    "delo": delo.fetch_articles,
-    "siol": siol.fetch_articles,
-    "nova24tv": nova24tv.fetch_articles,
-    "necenzurirano": necenzurirano.fetch_articles,
-    "dnevnik": dnevnik.fetch_articles,
-    "svet24": svet24.fetch_articles,
-    "vecer": vecer.fetch_articles,
-    "mladina": mladina.fetch_articles,
-    # "primorskenovice": primorskenovice.fetch_articles,
-    "ljubljanskenovice": ljubljanskenovice.fetch_articles,
-    "maribor24": maribor24.fetch_articles,
-    "planettv": planettv.fetch_articles,
-    "slotech": slotech.fetch_articles,
-    "reporter": reporter.fetch_articles,
-    "n1info": n1info.fetch_articles,
-    "zurnal24": zurnal24.fetch_articles,
-    "slovenskenovice": slovenskenovice.fetch_articles,
-    "sta": sta.fetch_articles,
-}
-
-
-async def fetch_articles(providers: list[str] | None = None):
-    # TODO: return more than just urls
+async def fetch_articles(provider_keys: list[str] | None = None):
     # TODO: implement error handling and retries
-    # TODO: do the equivalent of p-limit in python to limit concurrency. put `concurreny` in config.py
-    if not providers:
-        providers = list(PROVIDER_RSS_FETCHERS.keys())
+    providers_map = {provider.key: provider for provider in PROVIDERS}
 
-    tasks = [fetch(PROVIDER_RSS_FETCHERS[name], name) for name in providers]
+    if not provider_keys:
+        provider_keys = list(providers_map.keys())
+
+    tasks = [fetch(providers_map[key]) for key in provider_keys]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    successes: list[str] = []
+    successes: list[ArticleMetadata] = []
 
-    for name, result in zip(PROVIDER_RSS_FETCHERS.keys(), results):
+    for provider_key, result in zip(provider_keys, results):
         if isinstance(result, Exception):
-            logging.error(f"Failed to fetch from {name}: {result}")
+            logging.error(f"Failed to fetch from {provider_key}: {result}")
         elif isinstance(result, list):
             successes.extend(result)
-            logging.info(f"Fetched {len(result)} articles from {name}")
+            logging.info(f"Fetched {len(result)} articles from {provider_key}")
 
     return successes

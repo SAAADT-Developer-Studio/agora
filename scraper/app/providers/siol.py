@@ -1,16 +1,11 @@
-from datetime import datetime
-from app.utils import is_recent
-from app.feeds.fetch_rss_feed import fetch_rss_feed
-
-BASE_URL = "https://siol.net/feeds/latest"
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 
 
-async def fetch_articles():
-    articles = await fetch_rss_feed(BASE_URL)
-    urls = []
-    for article in articles:
-        date_format = "%a, %d %b %Y %H:%M:%S %z"
-        date = datetime.strptime(article["published"], date_format)
-        if is_recent(date):
-            urls.append(article["link"])
-    return urls
+class SiolProvider(NewsProvider):
+    def __init__(self):
+        super().__init__(
+            key="siol",
+            name="Siol",
+            url="https://siol.net",
+            rss_feeds=["https://siol.net/feeds/latest"],
+        )

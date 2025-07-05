@@ -1,4 +1,3 @@
-
 TIME_WINDOW = {
-  "hours": 4,
+    "minutes": 20,
 }

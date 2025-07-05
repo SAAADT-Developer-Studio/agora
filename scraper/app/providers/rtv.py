@@ -1,16 +1,11 @@
-from datetime import datetime
-from app.utils import is_recent
-from app.feeds.fetch_rss_feed import fetch_rss_feed
-
-BASE_URL = "https://img.rtvslo.si/feeds/00.xml"
+from app.providers.news_provider import NewsProvider
 
 
-async def fetch_articles():
-    articles = await fetch_rss_feed(BASE_URL)
-    urls = []
-    for article in articles:
-        date_format = "%a, %d %b %Y %H:%M:%S %z"
-        date = datetime.strptime(article["published"], date_format)
-        if is_recent(date):
-            urls.append(article["link"])
-    return urls
+class RTVProvider(NewsProvider):
+    def __init__(self):
+        super().__init__(
+            key="rtv",
+            name="RTV",
+            url="https://www.rtvslo.si",
+            rss_feeds=["https://img.rtvslo.si/feeds/00.xml"],
+        )
