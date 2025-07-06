@@ -13,7 +13,6 @@ from app.providers.mladina import MladinaProvider
 from app.providers.primorskenovice import PrimorskeNoviceProvider
 from app.providers.ljubljanskenovice import LjNoviceProvider
 from app.providers.maribor24 import Maribor24Provider
-from app.providers.planettv import PlanetTVProvider
 from app.providers.slotech import SloTechProvider
 from app.providers.reporter import ReporterProvider
 from app.providers.n1info import N1InfoProvider
@@ -39,7 +38,6 @@ PROVIDERS: list[NewsProvider] = [
     PrimorskeNoviceProvider(),
     LjNoviceProvider(),
     Maribor24Provider(),
-    PlanetTVProvider(),
     SloTechProvider(),
     ReporterProvider(),
     N1InfoProvider(),

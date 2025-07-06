@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 
-class Article(BaseModel):
+class ExtractedArticle(BaseModel):
     """Class representing an article with its attributes."""
 
     url: str = Field(description="URL of the article")
@@ -16,7 +16,7 @@ class Article(BaseModel):
 
 class Extractor(ABC):
     @abstractmethod
-    async def extract_article(self, url: str) -> Article:
+    async def extract_article(self, url: str) -> ExtractedArticle:
         pass
 
     async def fetch_article_html(self, url: str) -> str:
@@ -28,4 +28,5 @@ class Extractor(ABC):
             )
 
             response = await client.get(url)
+            response.raise_for_status()
             return response.text

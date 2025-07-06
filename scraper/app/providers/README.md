@@ -13,7 +13,6 @@ News providers TODO:
 - [x] [primorskenovice.py](scraper/app/providers/primorskenovice.py)
 - [x] [ljubljanskenovice.py](scraper/app/providers/ljubljanskenovice.py)
 - [x] [maribor24.py](scraper/app/providers/maribor24.py)
-- [x] [planettv.py](scraper/app/providers/planettv.py)
 - [x] [slotech.py](scraper/app/providers/slotech.py)
 - [x] [reporter.py](scraper/app/providers/reporter.py)
 - [x] [n1info.py](scraper/app/providers/n1info.py)

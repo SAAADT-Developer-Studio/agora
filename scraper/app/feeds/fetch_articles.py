@@ -9,7 +9,7 @@ from app.providers.news_provider import NewsProvider, ArticleMetadata
 # TODO: move these to config.py
 
 CONCURRENCY_LIMIT = 5
-RETRY_ATTEMPTS = 3
+RETRY_ATTEMPTS = 2
 
 semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 

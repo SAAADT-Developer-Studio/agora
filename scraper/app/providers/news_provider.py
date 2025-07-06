@@ -26,11 +26,13 @@ class NewsProvider(ABC):
         name: str,
         url: str,
         rss_feeds: list[str],
+        rss_date_format: str = "%a, %d %b %Y %H:%M:%S %z",
     ):
         self.key = key
         self.name = name
         self.url = url
         self.rss_feeds = rss_feeds
+        self.rss_date_format = rss_date_format
 
     async def fetch_articles(self) -> list[ArticleMetadata]:
         """
@@ -53,24 +55,26 @@ class NewsProvider(ABC):
     ) -> list[ArticleMetadata]:
         client.follow_redirects = True
         response = await client.get(feed_url)
+        response.raise_for_status()
         feed = feedparser.parse(response.text)
 
         articles = []
         for entry in feed["entries"]:
-            date = datetime.now()
-            if "published" in entry:
-                date = datetime.strptime(entry["published"], "%a, %d %b %Y %H:%M:%S %z")
-            entry["summary"] = entry.get("summary")
-            entry["title"] = entry["title"]
-            articles.append(
-                ArticleMetadata(
-                    title=entry["title"],
-                    link=entry["link"],
-                    published_at=date,
-                    summary=entry["summary"],
-                )
-            )
+            articles.append(self.parse_rss_feed_entry(entry))
         return articles
+
+    def parse_rss_feed_entry(self, entry: dict) -> ArticleMetadata:
+        date = datetime.now()
+        if "published" in entry:
+            date = datetime.strptime(entry["published"], self.rss_date_format)
+        entry["summary"] = entry.get("summary")
+        entry["title"] = entry["title"]
+        return ArticleMetadata(
+            title=entry["title"],
+            link=self.get_link(entry["link"]),
+            published_at=date,
+            summary=entry["summary"],
+        )
 
     def get_link(self, link: str) -> str:
         """
