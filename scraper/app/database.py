@@ -1,73 +1,74 @@
-import os
-import boto3
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.dialects.postgresql import ARRAY
+import app.config as config
+
+Base = declarative_base()
+
+
+class Article(Base):
+    __tablename__ = "article"
+    id = Column(Integer, primary_key=True)
+    url = Column(String, unique=True, nullable=False)
+    title = Column(String)
+    author = Column(String, nullable=True)
+    deck = Column(String)
+    content = Column(String, nullable=True)
+    published_at = Column(DateTime(timezone=True))
+    embedding = Column(ARRAY(Float))
+
+    def __repr__(self):
+        return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
+
+
+# TODO: seed providers
+# def seed_new_providers():
+#     for provider in PROVIDERS:
+#         pass
+
+# class NewsProvider(Base):
+#     __tablename__ = "news_provider"
+#     id = Column(Integer, primary_key=True)
+#     name = Column(String, unique=True, nullable=False)
+#     key = Column(String, unique=True, nullable=False)
+#     url = Column(String, unique=True, nullable=False)
+
+#     def __repr__(self):
+#         return f"<NewsProvider(id={self.id}, name={self.name}, key={self.key})>"
+
+
+# class Cluster(Base):
+#     __tablename__ = "cluster"
+#     id = Column(Integer, primary_key=True)
+#     title = Column(String, unique=True, nullable=False)
+
+#     def __repr__(self):
+#         return f"<Cluster(id={self.id}, name={self.name})>"
+
+engine = create_engine(config.DATABASE_URL)
+
+# TODO: use https://alembic.sqlalchemy.org/en/latest/ in production
+# Create tables
+Base.metadata.create_all(engine)
 
 
 class Database:
     def __init__(self):
-        self.dynamodb = self.get_dynamodb_resource()
-        self.table_name = "articles"
-        self.articles_table = self.dynamodb.Table(self.table_name)
 
-    def get_dynamodb_resource(self):
-        """
-        Creates a DynamoDB resource, connecting to either local or production.
-        """
-        if os.getenv("APP_ENV") == "development":
-            return boto3.resource(
-                "dynamodb",
-                endpoint_url="http://localhost:8000",  # Or your configured local endpoint
-                region_name="local",  # Region is required but can be arbitrary for local
-                aws_access_key_id="dummyMyAccessKeyId",  # Required, but can be dummy for local
-                aws_secret_access_key="dummySecretAccessKey",  # Required, but can be dummy for local
-            )
-        return boto3.resource("dynamodb")  # TODO: where to get aws prod credentials
+        # Create a session
+        Session = sessionmaker(bind=engine)
+        self.session = Session()
 
-    def put_item(self, item):
-        """
-        Puts an item into the DynamoDB table.
-        """
-        try:
-            self.articles_table.put_item(
-                Item=item,
-            )
-            print(f"Item added successfully")
-        except Exception as e:
-            print(f"Error adding item: {e}")
+    def get_articls_by_urls(self, urls_to_check: list[str]) -> set[str]:
+        query_results = (
+            self.session.query(Article.url).filter(Article.url.in_(urls_to_check)).all()
+        )
+        existing_urls = {result[0] for result in query_results}
+        return existing_urls
 
-    def bulk_put(self, items):
-        """
-        Inserts multiple items into the DynamoDB table.
-        """
-        try:
-            with self.articles_table.batch_writer() as batch:
-                for item in items:
-                    batch.put_item(Item=item)
-            print(f"Items added successfully")
-        except Exception as e:
-            print(f"Error adding items: {e}")
+    def bulk_insert_articles(self, articles: list[Article]):
+        self.session.bulk_save_objects(articles)
 
-    def items_exists(self, url):
-        """
-        Checks if an item exists in the DynamoDB table.
-        """
-        try:
-            response = self.articles_table.get_item(
-                Key={"url": url},
-            )
-            return "Item" in response
-        except Exception as e:
-            return False
-
-
-# class Article(SQLModel, table=True):
-#     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-#     created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
-#     updated_at: datetime.datetime = Field(
-#         sa_column=Column(DateTime(), onupdate=func.now())
-#     )
-#     url: str = Field(str, unique=True)
-#     title: str
-#     summary: str
-#     content: str
-#     author: str
-#     num_comments: int | None = None
+    def close(self):
+        self.session.commit()
+        self.session.close()

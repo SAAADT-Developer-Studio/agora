@@ -1,17 +1,17 @@
 import asyncio
 import dotenv
 
-from app.extractor.extractor import Extractor
+from app.extractor.extractor import Extractor, ExtractedArticle
 from app.extractor.llm_extractor import LlmExtractor
 from app.extractor.readability_extractor import ReadabilityExtractor
-from app.database import Database
+from scraper.app.database import Database, Article
 
 from app.feeds.fetch_articles import fetch_articles
 import argparse
 import logging
-from datetime import datetime
 from pprint import pprint
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_core.embeddings import Embeddings
 
 
 async def main():
@@ -29,62 +29,92 @@ async def main():
     args = parser.parse_args()
 
     providers: str | None = args.providers
+
     extractor: Extractor = ReadabilityExtractor()
     db = Database()
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
     await process(
         extractor=extractor,
         db=db,
         providers=providers,
+        embeddings=embeddings,
     )
+
+    db.close()
 
 
 async def process(
     extractor: Extractor,
     db: Database,
     providers: list[str] | None,
+    embeddings: Embeddings,
 ):
     article_metadatas = await fetch_articles(providers)
-    # TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
-    # or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
-    # after that we can use some sort of Markdown react component to render the markdown in the web app
+
+    article_urls = [article_metadata.link for article_metadata in article_metadatas]
+    existing_urls = db.get_articls_by_urls(article_urls)
+
+    new_article_metadatas = [
+        article_metadata
+        for article_metadata in article_metadatas
+        if article_metadata.link not in existing_urls
+    ]
+
+    logging.info(f"Found {len(new_article_metadatas)} new articles")
+
     # extractor: Extractor = LlmExtractor()
 
-    # TODO: add concurrency, retries, timeout, error handling
+    # TODO: separate checking if article exists in DB and processing the article
+    # TODO: add concurrency,
+    # retries, timeout, error handling
+    extracted_articles: list[ExtractedArticle] = []
+    for article_metadata in new_article_metadatas:
+        extracted_article = await extract_article(article_metadata.link, extractor)
+        if extracted_article:
+            extracted_articles.append(extracted_article)
+
+    # TODO: errors
+    articles_embeddings = await generate_embeddings(extracted_articles, embeddings)
+
     articles = []
-    for article_metadata in article_metadatas:
-        if db.items_exists(article_metadata.link):
-            print(f"Article already exists in DB: {article_metadata.link}")
-            continue
-        article = await process_article(article_metadata.link, extractor)
-        if article:
-            articles.append(article)
+    for article_metadata, extracted_article, embedding in zip(
+        new_article_metadatas, extracted_articles, articles_embeddings
+    ):
+        article = Article(
+            url=article_metadata.link,
+            title=article_metadata.title,
+            author=extracted_article.author,
+            deck=extracted_article.deck,
+            content=extracted_article.content,
+            published_at=extracted_article.published_at,
+            embedding=embedding,
+        )
+        pprint(article)
+        articles.append(article)
 
-    # await generate_embeddings(articles)  # TODO: errors
-    db.bulk_put(articles)
+    # TODO: error handling
+    db.bulk_insert_articles(articles)
+    logging.info("Successfully processed new articles!")
 
 
-async def process_article(url: str, extractor: Extractor):
-    print(f"Processing article: {url}")
+async def extract_article(url: str, extractor: Extractor):
+    logging.info(f"Extracting article: {url}")
     # TODO: better error handling
+    # TODO: this is deprecated nonsense
     try:
         content = await extractor.extract_article(url)
-        dict_content = content.model_dump()
-        dict_content["url"] = url
-        dict_content["created_at"] = int(datetime.now().timestamp())
-        pprint(dict_content)
-        return dict_content
+        return content
     except Exception as e:
         logging.error(f"Error extracting article from {url}: {e}")
 
 
-async def generate_embeddings(articles):
-    decks = [article["deck"] for article in articles]
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-    article_embeddings = await embeddings.embed_documents(decks)
-
-    for vector, article in zip(article_embeddings, articles):
-        article["embedding"] = vector
+async def generate_embeddings(
+    articles: list[ExtractedArticle], embeddings: Embeddings
+) -> list[list[float]]:
+    decks = [article.deck for article in articles]
+    article_embeddings = embeddings.embed_documents(decks)
+    return article_embeddings
 
 
 if __name__ == "__main__":

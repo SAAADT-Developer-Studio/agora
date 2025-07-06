@@ -1,6 +1,11 @@
-from app.extractor.extractor import Article, Extractor
+from app.extractor.extractor import ExtractedArticle, Extractor
 from pprint import pprint
 from readability import parse
+
+
+# TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
+# or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
+# after that we can use some sort of Markdown react component to render the markdown in the web app
 
 
 class ReadabilityExtractor(Extractor):
@@ -12,7 +17,7 @@ class ReadabilityExtractor(Extractor):
     def __init__(self):
         pass
 
-    async def extract_article(self, url: str) -> Article:
+    async def extract_article(self, url: str) -> ExtractedArticle:
         """
         Extracts the main content from the HTML using Readability.
         """
@@ -20,13 +25,13 @@ class ReadabilityExtractor(Extractor):
         # documenation https://github.com/mozilla/readability?tab=readme-ov-file#parse
         doc = parse(html)
 
-        print(f"Readability Extractor Result for {url}:")
-        print(doc.text_content)
+        # TODO: use https://github.com/alan-turing-institute/ReadabiliPy
+        # for the main content
 
-        return Article(
+        return ExtractedArticle(
             title=doc.title,
             deck=doc.excerpt,
-            content=doc.title,
+            content=doc.text_content,
             author=doc.byline,
             url=url,
             published_at=doc.published_time,

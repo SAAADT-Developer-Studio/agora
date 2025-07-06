@@ -4,7 +4,7 @@ import getpass
 from langchain.chat_models import init_chat_model
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from pydantic import BaseModel, Field
-from app.extractor.extractor import Article, Extractor
+from app.extractor.extractor import ExtractedArticle, Extractor
 
 import html2text
 from langchain.globals import set_debug
@@ -36,7 +36,7 @@ class LlmExtractor(Extractor):
         self.llm = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
         self.structured_llm = self.llm.with_structured_output(ArticleStructuredOutput)
 
-    async def extract_article(self, url: str) -> Article:
+    async def extract_article(self, url: str) -> ExtractedArticle:
         html = await self.fetch_article_html(url)
         content = self.generate_markdown(html)
 
@@ -52,7 +52,7 @@ class LlmExtractor(Extractor):
             """
         print(self.llm.get_num_tokens(prompt), url)
         result: ArticleStructuredOutput = self.structured_llm.invoke(prompt)
-        return Article(
+        return ExtractedArticle(
             title=result.title,
             author=result.author,
             deck=result.deck,
