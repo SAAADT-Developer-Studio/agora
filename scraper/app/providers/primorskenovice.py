@@ -45,6 +45,7 @@ class PrimorskeNoviceProvider(NewsProvider):
                 ArticleMetadata(
                     link=link,
                     published_at=date,
+                    provider_key=self.key,
                 )
             )
         return articles

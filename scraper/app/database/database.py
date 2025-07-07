@@ -1,5 +1,13 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    ForeignKey,
+)
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.dialects.postgresql import ARRAY
 import app.config as config
 
@@ -11,30 +19,29 @@ class Article(Base):
     id = Column(Integer, primary_key=True)
     url = Column(String, unique=True, nullable=False)
     title = Column(String)
-    author = Column(String, nullable=True)
-    deck = Column(String)
-    content = Column(String, nullable=True)
     published_at = Column(DateTime(timezone=True))
+    deck = Column(String)
+    author = Column(String, nullable=True)
+    content = Column(String, nullable=True)
     embedding = Column(ARRAY(Float))
+
+    news_provider_key = Column(String, ForeignKey("news_provider.key"), nullable=False)
+    news_provider = relationship("NewsProvider", back_populates="articles")
 
     def __repr__(self):
         return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
 
 
-# TODO: seed providers
-# def seed_new_providers():
-#     for provider in PROVIDERS:
-#         pass
+class NewsProvider(Base):
+    __tablename__ = "news_provider"
+    key = Column(String, primary_key=True, nullable=False)
+    name = Column(String, unique=True, nullable=False)
+    url = Column(String, unique=True, nullable=False)
 
-# class NewsProvider(Base):
-#     __tablename__ = "news_provider"
-#     id = Column(Integer, primary_key=True)
-#     name = Column(String, unique=True, nullable=False)
-#     key = Column(String, unique=True, nullable=False)
-#     url = Column(String, unique=True, nullable=False)
+    articles = relationship("Article", back_populates="news_provider")
 
-#     def __repr__(self):
-#         return f"<NewsProvider(id={self.id}, name={self.name}, key={self.key})>"
+    def __repr__(self):
+        return f"<NewsProvider(id={self.id}, name={self.name}, key={self.key})>"
 
 
 # class Cluster(Base):
@@ -59,6 +66,10 @@ class Database:
         Session = sessionmaker(bind=engine)
         self.session = Session()
 
+    def close(self):
+        self.session.commit()
+        self.session.close()
+
     def get_articls_by_urls(self, urls_to_check: list[str]) -> set[str]:
         query_results = (
             self.session.query(Article.url).filter(Article.url.in_(urls_to_check)).all()
@@ -69,6 +80,6 @@ class Database:
     def bulk_insert_articles(self, articles: list[Article]):
         self.session.bulk_save_objects(articles)
 
-    def close(self):
+    def bulk_insert_news_providers(self, providers: list[NewsProvider]):
+        self.session.bulk_save_objects(providers)
         self.session.commit()
-        self.session.close()
