@@ -4,7 +4,8 @@ import dotenv
 from app.extractor.extractor import Extractor, ExtractedArticle
 from app.extractor.llm_extractor import LlmExtractor
 from app.extractor.readability_extractor import ReadabilityExtractor
-from scraper.app.database import Database, Article
+from app.database.database import Database, Article
+from app.database.seed_news_providers import seed_new_providers
 
 from app.feeds.fetch_articles import fetch_articles
 import argparse
@@ -33,6 +34,9 @@ async def main():
     extractor: Extractor = ReadabilityExtractor()
     db = Database()
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+
+    # TODO: move somewhere else?
+    seed_new_providers(db)
 
     await process(
         extractor=extractor,
@@ -87,8 +91,9 @@ async def process(
             author=extracted_article.author,
             deck=extracted_article.deck,
             content=extracted_article.content,
-            published_at=extracted_article.published_at,
+            published_at=article_metadata.published_at,
             embedding=embedding,
+            news_provider_key=article_metadata.provider_key,
         )
         pprint(article)
         articles.append(article)

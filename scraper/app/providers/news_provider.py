@@ -12,6 +12,7 @@ class ArticleMetadata:
     """Metadata for an article."""
 
     link: str
+    provider_key: str
     published_at: datetime = field(default_factory=datetime.now)
     title: Optional[str] = None
     summary: Optional[str] = None
@@ -74,6 +75,7 @@ class NewsProvider(ABC):
             link=self.get_link(entry["link"]),
             published_at=date,
             summary=entry["summary"],
+            provider_key=self.key,
         )
 
     def get_link(self, link: str) -> str:

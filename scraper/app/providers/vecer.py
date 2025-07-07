@@ -30,6 +30,7 @@ class VecerProvider(NewsProvider):
     #                 ArticleMetadata(
     #                     link=article_url,
     #                     published_at=date,
+    #                     provider_key=self.key,
     #                 )
     #             )
     #         return urls
