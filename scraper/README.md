@@ -15,3 +15,10 @@ poetry run python3 -m app.main
 # limit to certain providers
 poetry run python3 -m app.main -providers=rtv,delo
 ```
+
+### Docker
+
+```bash
+docker build -t vidik-scraper .
+docker run --env-file ./.env vidik-scraper
+```

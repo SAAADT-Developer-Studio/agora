@@ -1,6 +1,9 @@
-FROM python:3.13-slim-bookworm as base
+FROM python:3.13-slim-bookworm AS base
 
-FROM base as builder
+FROM base AS builder
+
+RUN apt-get update && apt-get install -y build-essential
+
 RUN pip install poetry==1.4.2
 
 ENV POETRY_NO_INTERACTION=1 \
@@ -16,7 +19,7 @@ RUN touch README.md
 RUN poetry install --without dev --no-root && rm -rf $POETRY_CACHE_DIR
 
 # The runtime image, used to just run the code provided its virtual environment
-FROM base as runtime
+FROM base AS runtime
 
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
