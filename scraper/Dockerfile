@@ -1,9 +1,28 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-bookworm as base
+
+FROM base as builder
+RUN pip install poetry==1.4.2
+
+ENV POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_VIRTUALENVS_CREATE=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install --no-install-recommends -y curl
+COPY pyproject.toml poetry.lock ./
+RUN touch README.md
 
-RUN curl -sSL https://install.python-poetry.org | python3 -
+RUN poetry install --without dev --no-root && rm -rf $POETRY_CACHE_DIR
 
-ENV PATH="/root/.local/bin:$PATH"
+# The runtime image, used to just run the code provided its virtual environment
+FROM base as runtime
+
+ENV VIRTUAL_ENV=/app/.venv \
+    PATH="/app/.venv/bin:$PATH"
+
+COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+
+COPY app ./app
+
+ENTRYPOINT ["python", "-m", "app.main"]
