@@ -24,10 +24,12 @@ News providers TODO:
 - [x] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [x] [demokracija](https://demokracija.si/) https://demokracija.si/
-- [ ] [info360](https://info360.si/) https://info360.si//rss.xml
+- [x] [info360](https://info360.si/) https://info360.si//rss.xml
 - [ ] [insajder](https://insajder.com/)
-- [ ] [regional](https://www.regionalobala.si/)
+- [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
+- [ ] [vestnik](https://vestnik.svet24.si/novice)
+- [ ] [regional](https://www.regionalobala.si/)
 - [ ] [politikis](https://www.politikis.si/)
 - [ ] [monitor](https://www.monitor.si/)
 - [ ] [dolenjski list](https://dolenjskilist.svet24.si)
@@ -51,6 +53,11 @@ News providers TODO:
 - [ ] [domžalske novice](https://www.domzalske-novice.si)
 - [ ] [škofje loške novice](https://loske-novice.si)
 - [ ] [lokalne goriške novice](https://www.robin.si/kategorija/lokalne-novice/)
+- [ ] [koroske novice](https://www.koroskenovice.si/)
+- [ ] [pomurske novice](https://pomurske-novice.si) https://pomurske-novice.si/feed/
+- [ ] [mojaobcina](https://www.mojaobcina.si/ljubljana) every municipality has its own feed
+- [ ] [posavskiobzornik](https://www.posavskiobzornik.si/)
+- [ ] [eposavje](https://www.eposavje.com/)
 
 Idea: include government feeds, for example FURS https://www.fu.gov.si/rss
 
@@ -76,14 +83,6 @@ can get ideas for other news sources.
 ### paywalled, which sucks
 
 - [ ] [finance.py](scraper/app/providers/finance.py)
-
-### regional providers, maybe relevant for some localized news feature
-
-- [ ] koroske novice
-- [ ] primorske novice
-- [ ] ljubljanske novice
-- [ ] pomurske novice
-- [ ] ...
 
 ### TODO:
 
