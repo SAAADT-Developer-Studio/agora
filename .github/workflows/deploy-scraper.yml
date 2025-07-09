@@ -1,0 +1,41 @@
+name: Deploy Scraper to Hetzner VM
+
+# TODO: use ansible instead, so we can test it locally https://t3.chat/chat/a4f89168-7873-404c-af57-356632552285
+
+on:
+  push:
+    branches:
+      - main # Trigger on pushes to the main branch
+
+env:
+  DOCKER_IMAGE_NAME: vidik-scraper
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+  # HETZNER_VM_HOST: ${{ secrets.HETZNER_VM_HOST }} # Your VM's IP address or hostname
+  # HETZNER_SSH_USER: ${{ secrets.HETZNER_SSH_USER }} # e.g., 'root' or a specific user
+  # HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }} # SSH private key
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }} # Use a PAT for security
+
+      - name: Build and Push Docker Image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          file: ./scraper/Dockerfile
+          push: true
+          tags: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          cache-from: type=gha # Cache layers to speed up builds
+
+
+    # TODO
+    #   - name: Deploy to Hetzner VM
