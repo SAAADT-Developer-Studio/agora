@@ -34,7 +34,7 @@ jobs:
         id: docker_build
         uses: docker/build-push-action@v5
         with:
-          file: ./scraper/Dockerfile
+          context: scraper
           push: true
           tags: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
           cache-from: type=gha # Cache layers to speed up builds
