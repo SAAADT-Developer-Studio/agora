@@ -5,7 +5,10 @@ name: Deploy Scraper to Hetzner VM
 on:
   push:
     branches:
-      - main # Trigger on pushes to the main branch
+      - main
+  pull_request:
+    branches:
+      - main # Trigger on pull requests to the main branch
 
 env:
   DOCKER_IMAGE_NAME: vidik-scraper
