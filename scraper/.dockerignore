@@ -1,0 +1,24 @@
+.DS_Store
+.git
+
+.env
+
+.mypy_cache
+__pycache__
+
+# Docker
+docker-compose.yml
+Dockerfile
+.docker
+.dockerignore
+
+README*
+
+.git
+.gitignore
+.github
+.vscode
+
+venv/
+*.pyc
+*.pytest_cache
