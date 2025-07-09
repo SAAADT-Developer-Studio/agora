@@ -24,6 +24,7 @@ News providers TODO:
 - [x] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [x] [demokracija](https://demokracija.si/) https://demokracija.si/
+- [ ] [info360](https://info360.si/) https://info360.si//rss.xml
 - [ ] [insajder](https://insajder.com/)
 - [ ] [regional](https://www.regionalobala.si/)
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
