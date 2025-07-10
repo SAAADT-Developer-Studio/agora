@@ -55,6 +55,14 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
         shell: bash
 
+      - name: Generate dynamic Ansible inventory
+        run: |
+          cat <<EOF > ansible/inventory.ini
+          [hetzner_vms]
+          ${{ env.HETZNER_VM_HOST }} ansible_user=${{ env.HETZNER_SSH_USER }} ansible_ssh_private_key_file=~/.ssh/id_rsa
+          EOF
+        shell: bash
+
       - name: Deploy to Hetzner VM with Ansible
         run: |
           ansible-playbook ansible/deploy.yml \

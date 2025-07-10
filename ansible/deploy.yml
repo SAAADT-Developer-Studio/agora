@@ -66,8 +66,6 @@
         image: "{{ full_image_name }}"
         state: started
         recreate: yes
-        ports:
-          - "80:80"
         # Using env_file to pass secrets
         env_file:
           - "{{ temp_env_dir.path }}/.env" # Use the .env file we just created
