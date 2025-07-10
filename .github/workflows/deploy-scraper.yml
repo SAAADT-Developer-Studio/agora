@@ -13,9 +13,9 @@ on:
 env:
   DOCKER_IMAGE_NAME: vidik-scraper
   DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
-  # HETZNER_VM_HOST: ${{ secrets.HETZNER_VM_HOST }} # Your VM's IP address or hostname
-  # HETZNER_SSH_USER: ${{ secrets.HETZNER_SSH_USER }} # e.g., 'root' or a specific user
-  # HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }} # SSH private key
+  HETZNER_VM_HOST: ${{ secrets.HETZNER_VM_HOST }} # TODO: get this from terraform output
+  HETZNER_SSH_USER: root
+  HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
 
 jobs:
   build-and-deploy:
@@ -39,6 +39,34 @@ jobs:
           tags: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
           cache-from: type=gha # Cache layers to speed up builds
 
+      - name: Install Ansible
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-pip
+          pip3 install ansible docker
 
-    # TODO
-    #   - name: Deploy to Hetzner VM
+      - name: Configure SSH Key for Ansible
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          # For improved security, you can explicitly add host to known_hosts
+          # This is important for strict host key checking
+          ssh-keyscan -H "${{ env.HETZNER_VM_HOST }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        shell: bash
+
+      - name: Deploy to Hetzner VM with Ansible
+        run: |
+          ansible-playbook ansible/deploy.yml \
+            -i ansible/inventory.ini \
+            --extra-vars "DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }}
+            DOCKER_HUB_USERNAME=${{ env.DOCKER_HUB_USERNAME }}
+            DOCKER_HUB_TOKEN=${{ secrets.DOCKER_HUB_TOKEN }}
+            GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}" \
+            --private-key ~/.ssh/id_rsa
+        working-directory: ${{ github.workspace }} # Ensure ansible runs from repo root
+        env:
+          # Pass these as environment variables so ansible/inventory.ini can use them
+          HETZNER_VM_HOST: ${{ env.HETZNER_VM_HOST }}
+          HETZNER_SSH_USER: ${{ env.HETZNER_SSH_USER }}

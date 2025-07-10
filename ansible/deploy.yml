@@ -1,0 +1,80 @@
+# ansible/deploy.yml
+---
+- name: Deploy Docker image to Hetzner VM
+  hosts: hetzner_vms
+  become: true
+
+  vars:
+    docker_image_name: "{{ lookup('env', 'DOCKER_IMAGE_NAME') }}"
+    docker_hub_username: "{{ lookup('env', 'DOCKER_HUB_USERNAME') }}"
+    docker_hub_token: "{{ lookup('env', 'DOCKER_HUB_TOKEN') }}"
+    app_secrets:
+      GOOGLE_API_KEY: "{{ lookup('env', 'GOOGLE_API_KEY') }}"
+      DATABASE_URL: "{{ lookup('env', 'DATABASE_URL') }}"
+      APP_ENV: production
+
+  tasks:
+    - name: Ensure Docker login
+      community.docker.docker_login:
+        username: "{{ docker_hub_username }}"
+        password: "{{ docker_hub_token }}"
+      no_log: true
+
+    - name: Define full image name
+      ansible.builtin.set_fact:
+        full_image_name: "{{ docker_hub_username }}/{{ docker_image_name }}:latest"
+
+    - name: Create temporary directory for env file
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: "docker_env"
+      register: temp_env_dir
+
+    - name: Create .env file with secrets on target VM
+      ansible.builtin.copy:
+        content: |
+          {% for key, value in app_secrets.items() %}
+          {{ key }}={{ value | quote }}
+          {% endfor %}
+        dest: "{{ temp_env_dir.path }}/.env"
+        mode: "0600" # Only owner can read/write
+      no_log: true # Very important to prevent secrets in logs
+
+    - name: Stop and remove old container if it exists
+      community.docker.docker_container:
+        name: "{{ docker_image_name }}-container"
+        state: absent
+        force_inspect: true
+      ignore_errors: true
+
+    - name: Pull new Docker image
+      community.docker.docker_image:
+        name: "{{ full_image_name }}"
+        source: pull
+        state: present
+
+    - name: Remove dangling images (optional, to save space)
+      community.docker.docker_prune:
+        containers: false
+        images: true
+        networks: false
+        volumes: false
+
+    - name: Run new Docker container with environment variables from .env file
+      community.docker.docker_container:
+        name: "{{ docker_image_name }}-container"
+        image: "{{ full_image_name }}"
+        state: started
+        recreate: yes
+        ports:
+          - "80:80"
+        # Using env_file to pass secrets
+        env_file:
+          - "{{ temp_env_dir.path }}/.env" # Use the .env file we just created
+        restart_policy: unless-stopped
+
+    - name: Clean up temporary env directory
+      ansible.builtin.file:
+        path: "{{ temp_env_dir.path }}"
+        state: absent
+      when: temp_env_dir.path is defined
