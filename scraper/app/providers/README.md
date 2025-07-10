@@ -32,6 +32,7 @@ News providers TODO:
 - [ ] [regional](https://www.regionalobala.si/)
 - [ ] [politikis](https://www.politikis.si/)
 - [ ] [monitor](https://www.monitor.si/)
+- [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
 - [ ] [dolenjski list](https://dolenjskilist.svet24.si)
 - [ ] [gorenjski glas](https://www.gorenjskiglas.si)
 - [ ] [ekipa24](https://ekipa.svet24.si)

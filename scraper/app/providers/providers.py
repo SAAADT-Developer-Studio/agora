@@ -23,6 +23,7 @@ from app.providers.cekin import CekinProvider
 from app.providers.demokracija import DemokracijaProvider
 from app.providers.bloombergadria import BloombergAdriaProvider
 from app.providers.info360 import Info360Provider
+from app.providers.lokalec import LokalecProvider
 
 
 PROVIDERS: list[NewsProvider] = [
@@ -49,4 +50,5 @@ PROVIDERS: list[NewsProvider] = [
     DemokracijaProvider(),
     BloombergAdriaProvider(),
     Info360Provider(),
+    LokalecProvider(),
 ]
