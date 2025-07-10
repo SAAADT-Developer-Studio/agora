@@ -66,8 +66,7 @@
         state: started
         recreate: yes
         # Using env_file to pass secrets
-        env_file:
-          - "{{ temp_env_dir.path }}/.env" # Use the .env file we just created
+        env_file: "{{ temp_env_dir.path }}/.env"
         restart_policy: unless-stopped
 
     - name: Clean up temporary env directory
