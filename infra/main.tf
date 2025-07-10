@@ -14,8 +14,8 @@ resource "hcloud_server" "scraper_server" {
   name        = "scraper-app-server"
   image       = "docker-ce"
   server_type = "cpx11"
-  location    = "fsn1"                      # DE Falkenstein fsn1
-  ssh_keys    = [hcloud_ssh_key.default.id] # Link to your SSH key resource
+  location    = "fsn1"                                            # DE Falkenstein fsn1
+  ssh_keys    = [hcloud_ssh_key.default.id, hcloud_ssh_key.ci.id] # Link to your SSH key resource
   labels = {
     env = "production"
     app = "scraper"

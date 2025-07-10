@@ -44,7 +44,6 @@
       community.docker.docker_container:
         name: "{{ docker_image_name }}-container"
         state: absent
-        force_inspect: true
       ignore_errors: true
 
     - name: Pull new Docker image
