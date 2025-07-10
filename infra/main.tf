@@ -26,3 +26,8 @@ resource "hcloud_ssh_key" "default" {
   name       = "scraper-ssh-key"
   public_key = file("~/.ssh/id_ed25519.pub")
 }
+
+resource "hcloud_ssh_key" "ci" {
+  name       = "ci-scraper-ssh-key"
+  public_key = file("~/.ssh/id_rsa.pub")
+}
