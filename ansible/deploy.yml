@@ -6,6 +6,7 @@
 
   vars:
     docker_image_name: "{{ lookup('env', 'DOCKER_IMAGE_NAME') }}"
+    docker_image_tag: "{{ lookup('env', 'DOCKER_IMAGE_TAG') }}"
     docker_hub_username: "{{ lookup('env', 'DOCKER_HUB_USERNAME') }}"
     docker_hub_token: "{{ lookup('env', 'DOCKER_HUB_TOKEN') }}"
     app_secrets:
@@ -22,7 +23,7 @@
 
     - name: Define full image name
       ansible.builtin.set_fact:
-        full_image_name: "{{ docker_hub_username }}/{{ docker_image_name }}:latest"
+        full_image_name: "{{ docker_hub_username }}/{{ docker_image_name }}:{{ docker_image_tag }}"
 
     - name: Create temporary directory for env file
       ansible.builtin.tempfile:
