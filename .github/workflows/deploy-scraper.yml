@@ -67,10 +67,14 @@ jobs:
         run: |
           ansible-playbook ansible/deploy.yml \
             -i ansible/inventory.ini \
-            --extra-vars "DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }} DOCKER_IMAGE_TAG=${{ github.sha }} DOCKER_HUB_USERNAME=${{ env.DOCKER_HUB_USERNAME }} DOCKER_HUB_TOKEN=${{ secrets.DOCKER_HUB_TOKEN }} GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }} DATABASE_URL=${{ secrets.DATABASE_URL }}" \
             --private-key ~/.ssh/id_rsa
         working-directory: ${{ github.workspace }} # Ensure ansible runs from repo root
         env:
-          # Pass these as environment variables so ansible/inventory.ini can use them
           HETZNER_VM_HOST: ${{ env.HETZNER_VM_HOST }}
           HETZNER_SSH_USER: ${{ env.HETZNER_SSH_USER }}
+          DOCKER_IMAGE_NAME: ${{ env.DOCKER_IMAGE_NAME }}
+          DOCKER_IMAGE_TAG: ${{ github.sha }}
+          DOCKER_HUB_USERNAME: ${{ env.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
