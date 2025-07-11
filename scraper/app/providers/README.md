@@ -25,6 +25,7 @@ News providers TODO:
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [x] [demokracija](https://demokracija.si/) https://demokracija.si/
 - [x] [info360](https://info360.si/) https://info360.si//rss.xml
+- [ ] [zon](https://zon.si/) https://zon.si/feed/
 - [ ] [insajder](https://insajder.com/)
 - [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
@@ -59,19 +60,55 @@ News providers TODO:
 - [ ] [mojaobcina](https://www.mojaobcina.si/ljubljana) every municipality has its own feed
 - [ ] [posavskiobzornik](https://www.posavskiobzornik.si/)
 - [ ] [eposavje](https://www.eposavje.com/)
+- [ ] [mariborinfo](https://mariborinfo.com/)
 
 Idea: include government feeds, for example FURS https://www.fu.gov.si/rss
 
 A news site for all slovenian news sites: https://www.telex.si/viri.php
 
-TODO:
+## Adding a Provider
 
-Go over all providers again and use rss if possible. You can typically find it
-by viewing the page source and looking for <link> tags with rel="alternate" and
-type="application/rss+xml" or type="application/atom+xml"
+### 1. Locate the RSS Feed
 
-- dnevnik https://www.dnevnik.si/rss.xml
+Identify the RSS feed URL for the target website. This can typically be found by:
+*   **Viewing Page Source:** Inspect the HTML source code for `<link>` tags with the following attributes:
+    *   `rel="alternate"`
+    *   `type="application/rss+xml"` or `type="application/atom+xml"`
 
+### 2. Create the Provider File
+
+Create a new Python file at `/scraper/app/providers/[providername].py`.
+
+```python
+from app.providers.news_provider import NewsProvider
+
+
+class DeloProvider(NewsProvider):
+    def __init__(self):
+        super().__init__(
+            key="delo",  # Unique key for the provider, used in the command line to run with specific providers
+            name="Delo",  # Display name of the provider
+            url="https://www.delo.si",  # Base URL of the website
+            rss_feeds=["https://www.delo.si/rss"],  # List of RSS feed URLs
+        )
+      # If website has no rss feed, implement fetching of new articles manually
+    async def fetch_articles(self) -> list[ArticleMetadata]:
+        pass
+
+```
+
+### 3. Add to the list of providers in  [providers.py](/scraper/app/providers/providers.py)
+
+### 4. Test the Provider
+
+Verify the new provider by running the following command:
+
+```bash
+poetry run python3 -m app.main --providers=delo
+
+```
+
+## Other
 This website already implemented article grouping by news event:
 https://www.times.si/ They scrape periodicaly every 10 minutes. This is where we
 can get ideas for other news sources.
