@@ -35,7 +35,7 @@
       ansible.builtin.copy:
         content: |
           {% for key, value in app_secrets.items() %}
-          {{ key }}={{ value | quote }}
+          {{ key }}={{ value }}
           {% endfor %}
         dest: "{{ temp_env_dir.path }}/.env"
         mode: "0600" # Only owner can read/write

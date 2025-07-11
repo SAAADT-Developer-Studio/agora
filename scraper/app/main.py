@@ -15,8 +15,6 @@ async def main() -> None:
     dotenv.load_dotenv()
     logging.basicConfig(level=logging.INFO)
 
-    return
-
     parser = argparse.ArgumentParser(description="Article Scraper")
 
     parser.add_argument(
