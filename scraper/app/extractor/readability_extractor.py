@@ -3,8 +3,7 @@ from pprint import pprint
 from readability import parse
 
 
-# TODO: check if we can use this: https://newspaper.readthedocs.io/en/latest/
-# or https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
+# https://github.com/alan-turing-institute/ReadabiliPy (port of @mozilla/readability npm package) + html to markdown to get rid of divs
 # after that we can use some sort of Markdown react component to render the markdown in the web app
 
 

@@ -1,0 +1,75 @@
+name: Deploy Scraper to Hetzner VM
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOCKER_IMAGE_NAME: vidik-scraper
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+  HETZNER_VM_HOST: ${{ secrets.HETZNER_VM_HOST }} # TODO: get this from terraform output
+  HETZNER_SSH_USER: root
+  HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }} # Use a PAT for security
+
+      - name: Build and Push Docker Image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: scraper
+          push: true
+          tags: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha # Cache layers to speed up builds
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-pip
+          pip3 install ansible docker
+
+      - name: Configure SSH Key for Ansible
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          # For improved security, you can explicitly add host to known_hosts
+          # This is important for strict host key checking
+          ssh-keyscan -H "${{ env.HETZNER_VM_HOST }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        shell: bash
+
+      - name: Generate dynamic Ansible inventory
+        run: |
+          cat <<EOF > ansible/inventory.ini
+          [hetzner_vms]
+          ${{ env.HETZNER_VM_HOST }} ansible_user=${{ env.HETZNER_SSH_USER }} ansible_ssh_private_key_file=~/.ssh/id_rsa
+          EOF
+        shell: bash
+
+      - name: Deploy to Hetzner VM with Ansible
+        run: |
+          ansible-playbook ansible/deploy.yml \
+            -i ansible/inventory.ini \
+            --private-key ~/.ssh/id_rsa
+        working-directory: ${{ github.workspace }} # Ensure ansible runs from repo root
+        env:
+          HETZNER_VM_HOST: ${{ env.HETZNER_VM_HOST }}
+          HETZNER_SSH_USER: ${{ env.HETZNER_SSH_USER }}
+          DOCKER_IMAGE_NAME: ${{ env.DOCKER_IMAGE_NAME }}
+          DOCKER_IMAGE_TAG: ${{ github.sha }}
+          DOCKER_HUB_USERNAME: ${{ env.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

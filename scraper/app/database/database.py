@@ -53,6 +53,7 @@ class NewsProvider(Base):
 #         return f"<Cluster(id={self.id}, name={self.name})>"
 
 engine = create_engine(config.DATABASE_URL)
+Session = sessionmaker(bind=engine)
 
 # TODO: use https://alembic.sqlalchemy.org/en/latest/ in production
 # Create tables
@@ -61,9 +62,7 @@ Base.metadata.create_all(engine)
 
 class Database:
     def __init__(self):
-
         # Create a session
-        Session = sessionmaker(bind=engine)
         self.session = Session()
 
     def close(self):
@@ -79,6 +78,7 @@ class Database:
 
     def bulk_insert_articles(self, articles: list[Article]):
         self.session.bulk_save_objects(articles)
+        self.session.commit()
 
     def bulk_insert_news_providers(self, providers: list[NewsProvider]):
         self.session.bulk_save_objects(providers)

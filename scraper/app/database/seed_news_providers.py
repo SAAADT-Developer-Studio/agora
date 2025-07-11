@@ -1,12 +1,13 @@
 from app.providers.providers import PROVIDERS
-from app.database.database import Database, NewsProvider
+from app.database.database import Database, NewsProvider, Session
 import app.providers.news_provider as news_provider
 
 
-def seed_new_providers(db: Database):
+def seed_new_providers() -> None:
+    session = Session()
     # Get existing provider keys from the database
     existing_provider_keys: set[str] = set(
-        key for (key,) in db.session.query(NewsProvider.key).all()
+        key for (key,) in session.query(NewsProvider.key).all()
     )
 
     # Separate providers into new and existing based on keys
@@ -24,7 +25,7 @@ def seed_new_providers(db: Database):
 
     # Fetch existing NewsProvider objects that need updates
     existing_news_providers_to_update: list[NewsProvider] = (
-        db.session.query(NewsProvider)
+        session.query(NewsProvider)
         .filter(NewsProvider.key.in_([p.key for p in existing_providers_data]))
         .all()
     )
@@ -41,9 +42,9 @@ def seed_new_providers(db: Database):
             provider.url = provider_data.url
 
     # Add new providers to the session
-    db.session.add_all(new_news_providers)
+    session.add_all(new_news_providers)
 
     # Existing providers are already managed by the session, changes will be flushed
 
     # Commit all changes (inserts and updates)
-    db.session.commit()
+    session.commit()
