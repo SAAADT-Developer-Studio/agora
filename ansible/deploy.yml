@@ -73,6 +73,16 @@
         env_file: "{{ temp_env_dir.path }}/.env"
         restart_policy: unless-stopped
 
+    - name: Check if Docker container is running
+      community.docker.docker_container_info:
+        name: "{{ docker_image_name }}-container"
+      register: container_info
+
+    - name: Fail if container is not running
+      ansible.builtin.fail:
+        msg: "Container {{ docker_image_name }}-container is not running or has crashed."
+      when: container_info.container.State.Status != "running"
+
     - name: Clean up temporary env directory
       ansible.builtin.file:
         path: "{{ temp_env_dir.path }}"

@@ -1,14 +1,9 @@
 name: Deploy Scraper to Hetzner VM
 
-# TODO: use ansible instead, so we can test it locally https://t3.chat/chat/a4f89168-7873-404c-af57-356632552285
-
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main # Trigger on pull requests to the main branch
 
 env:
   DOCKER_IMAGE_NAME: vidik-scraper

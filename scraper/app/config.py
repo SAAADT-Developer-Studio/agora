@@ -1,5 +1,4 @@
 import os
-
 import dotenv
 
 dotenv.load_dotenv()
@@ -23,12 +22,3 @@ TIME_WINDOW = {
 APP_ENV = ensure_env_var("APP_ENV")
 GOOGLE_API_KEY = ensure_env_var("GOOGLE_API_KEY")
 DATABASE_URL = ensure_env_var("DATABASE_URL")
-
-print(
-    {
-        "APP_ENV": APP_ENV,
-        "GOOGLE_API_KEY": GOOGLE_API_KEY,
-        "DATABASE_URL": DATABASE_URL,
-        "TIME_WINDOW": TIME_WINDOW,
-    }
-)
