@@ -60,13 +60,16 @@
         networks: false
         volumes: false
 
+    - name: Debug Docker image reference
+      ansible.builtin.debug:
+        msg: "Docker image reference: {{ full_image_name }}"
+
     - name: Run new Docker container with environment variables from .env file
       community.docker.docker_container:
         name: "{{ docker_image_name }}-container"
         image: "{{ full_image_name }}"
         state: started
         recreate: yes
-        # Using env_file to pass secrets
         env_file: "{{ temp_env_dir.path }}/.env"
         restart_policy: unless-stopped
 
