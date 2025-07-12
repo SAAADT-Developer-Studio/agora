@@ -6,7 +6,6 @@ from app import config
 from app.providers.providers import PROVIDERS
 from app.providers.news_provider import NewsProvider, ArticleMetadata
 
-# TODO: move these to config.py
 
 CONCURRENCY_LIMIT = 5
 RETRY_ATTEMPTS = 2
@@ -30,7 +29,6 @@ async def fetch(provider: NewsProvider):
 
 
 async def fetch_articles(provider_keys: list[str] | None = None):
-    # TODO: implement error handling and retries
     providers_map = {provider.key: provider for provider in PROVIDERS}
 
     if not provider_keys:

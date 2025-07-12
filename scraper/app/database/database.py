@@ -52,7 +52,7 @@ class NewsProvider(Base):
 #     def __repr__(self):
 #         return f"<Cluster(id={self.id}, name={self.name})>"
 
-engine = create_engine(config.DATABASE_URL)
+engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 
 # TODO: use https://alembic.sqlalchemy.org/en/latest/ in production
