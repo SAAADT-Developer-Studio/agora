@@ -6,14 +6,23 @@
 - Does DBSCAN clustering on the window of last X articles
 - Generates Cluster Titles with an LLM
 
+## Setup
+
+Install [uv](https://docs.astral.sh/uv)
+
+```bash
+# install packages
+uv sync
+```
+
 ```bash
 # run with
-poetry run python3 -m app.main
+uv run python3 -m app.main
 ```
 
 ```bash
 # limit to certain providers
-poetry run python3 -m app.main -providers=rtv,delo
+uv run python3 -m app.main -providers=rtv,delo
 ```
 
 ### Docker

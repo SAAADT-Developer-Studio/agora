@@ -71,9 +71,10 @@ A news site for all slovenian news sites: https://www.telex.si/viri.php
 ### 1. Locate the RSS Feed
 
 Identify the RSS feed URL for the target website. This can typically be found by:
-*   **Viewing Page Source:** Inspect the HTML source code for `<link>` tags with the following attributes:
-    *   `rel="alternate"`
-    *   `type="application/rss+xml"` or `type="application/atom+xml"`
+
+- **Viewing Page Source:** Inspect the HTML source code for `<link>` tags with the following attributes:
+  - `rel="alternate"`
+  - `type="application/rss+xml"` or `type="application/atom+xml"`
 
 ### 2. Create the Provider File
 
@@ -97,18 +98,19 @@ class DeloProvider(NewsProvider):
 
 ```
 
-### 3. Add to the list of providers in  [providers.py](/scraper/app/providers/providers.py)
+### 3. Add to the list of providers in [providers.py](/scraper/app/providers/providers.py)
 
 ### 4. Test the Provider
 
 Verify the new provider by running the following command:
 
 ```bash
-poetry run python3 -m app.main --providers=delo
+uv run python3 -m app.main --providers=delo
 
 ```
 
 ## Other
+
 This website already implemented article grouping by news event:
 https://www.times.si/ They scrape periodicaly every 10 minutes. This is where we
 can get ideas for other news sources.
