@@ -42,13 +42,13 @@ resource "hcloud_ssh_key" "ci" {
 
 # DigitalOcean PostgreSQL database cluster
 resource "digitalocean_database_cluster" "postgres" {
-  name       = "scraper-postgres-cluster"
-  engine     = "pg"
-  version    = "17"
-  size       = "db-s-1vcpu-1gb"  
-  storage_size_mib = "30000"
-  region     = "fra1"           
-  node_count = 1
+  name             = "scraper-postgres-cluster"
+  engine           = "pg"
+  version          = "17"
+  size             = "db-s-1vcpu-1gb"
+  storage_size_mib = "30720" # 30 GiB, must be a 10 GiB increment
+  region           = "fra1"
+  node_count       = 1
 
   tags = ["production", "scraper", "postgres"]
 }
