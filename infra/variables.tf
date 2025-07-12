@@ -3,3 +3,9 @@ variable "hcloud_token" {
   type        = string
   sensitive   = true # Mark as sensitive to prevent logging
 }
+
+variable "digitalocean_token" {
+  description = "DigitalOcean API Token"
+  type        = string
+  sensitive   = true # Mark as sensitive to prevent logging
+}
