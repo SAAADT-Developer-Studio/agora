@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - scraper/**
+      - "!scraper/**/.md"
 
 env:
   DOCKER_IMAGE_NAME: vidik-scraper
