@@ -35,3 +35,6 @@ include = ["scraper/"] # Includes all contents of the scraper directory
 
 [tool.mypy]
 enable_incomplete_feature = "NewGenericSyntax"
+
+[tool.black]
+line-length = 100

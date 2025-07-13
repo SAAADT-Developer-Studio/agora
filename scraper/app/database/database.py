@@ -21,6 +21,7 @@ class Article(Base):
     title = Column(String)
     published_at = Column(DateTime(timezone=True))
     deck = Column(String)
+    summary = Column(String, nullable=True)
     author = Column(String, nullable=True)
     content = Column(String, nullable=True)
     embedding = Column(ARRAY(Float))
@@ -70,9 +71,7 @@ class Database:
         self.session.close()
 
     def get_articls_by_urls(self, urls_to_check: list[str]) -> set[str]:
-        query_results = (
-            self.session.query(Article.url).filter(Article.url.in_(urls_to_check)).all()
-        )
+        query_results = self.session.query(Article.url).filter(Article.url.in_(urls_to_check)).all()
         existing_urls = {result[0] for result in query_results}
         return existing_urls
 
