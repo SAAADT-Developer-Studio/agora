@@ -2,6 +2,7 @@ import asyncio
 import time
 import logging
 from langchain_core.embeddings import Embeddings
+from langchain.chat_models import init_chat_model
 from pprint import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -36,17 +37,41 @@ async def process(
         extract_article(article_metadata.link, extractor)
         for article_metadata in new_article_metadatas
     ]
-    results, errors = await run_concurrently_with_limit(tasks, limit=3)
+    results, _ = await run_concurrently_with_limit(tasks, limit=3)
     extracted_articles: list[ExtractedArticle] = [
         result for result in results if isinstance(result, ExtractedArticle)
     ]
 
-    # TODO: errors
-    articles_embeddings = generate_embeddings(extracted_articles, embeddings)
-
-    articles = join_articles(
-        new_article_metadatas, extracted_articles, articles_embeddings
+    # join metadata and extracted values, to prevent mismatches in case of errors
+    new_article_metadatas, extracted_articles = join_articles(
+        new_article_metadatas, extracted_articles
     )
+
+    # TODO: errors
+    summaries = await generate_summaries(new_article_metadatas, extracted_articles)
+
+    articles_embeddings = await generate_embeddings(extracted_articles, summaries, embeddings)
+
+    articles = []
+    for article_metadata, extracted_article, summary, embedding in zip(
+        new_article_metadatas,
+        extracted_articles,
+        summaries,
+        articles_embeddings,
+    ):
+        article = Article(
+            url=article_metadata.link,
+            title=article_metadata.title,
+            author=extracted_article.author,
+            deck=extracted_article.deck,
+            content=extracted_article.content,
+            summary=summary,
+            published_at=article_metadata.published_at,
+            embedding=embedding,
+            news_provider_key=article_metadata.provider_key,
+        )
+        pprint(article)
+        articles.append(article)
 
     # TODO: error handling
     db.bulk_insert_articles(articles)
@@ -69,33 +94,42 @@ async def extract_article(url: str, extractor: Extractor):
         logging.error(f"Error extracting article from {url}: {e}")
 
 
-def generate_embeddings(
-    articles: list[ExtractedArticle], embeddings: Embeddings
-) -> list[list[float]]:
-    decks = [article.deck for article in articles]
-    article_embeddings = embeddings.embed_documents(decks)
-    return article_embeddings
-
-
 def join_articles(
     article_metadatas: list[ArticleMetadata],
     extracted_articles: list[ExtractedArticle],
-    articles_embeddings: list[list[float]],
 ):
-    articles = []
+    metadatas = []
     metadata_map = {meta.link: meta for meta in article_metadatas}
-    for extracted_article, embedding in zip(extracted_articles, articles_embeddings):
-        article_metadata = metadata_map[extracted_article.url]
-        article = Article(
-            url=article_metadata.link,
-            title=article_metadata.title,
-            author=extracted_article.author,
-            deck=extracted_article.deck,
-            content=extracted_article.content,
-            published_at=article_metadata.published_at,
-            embedding=embedding,
-            news_provider_key=article_metadata.provider_key,
+    for extracted_article in extracted_articles:
+        metadatas.append(metadata_map[extracted_article.url])
+    return metadatas, extracted_articles
+
+
+async def generate_summaries(
+    article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle]
+) -> list[str]:
+    model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
+    inputs = []
+    for article_metadata, extracted_article in zip(article_metadatas, extracted_articles):
+        summary = f"Summary: {article_metadata.summary}" if article_metadata.summary else ""
+        deck = f"Deck: {extracted_article.deck}" if extracted_article.deck else ""
+        content = f"Content: {extracted_article.content}" if extracted_article.content else ""
+        prompt = (
+            "You are a professional Slovenian journalist.\n"
+            "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
+            f"Title: {article_metadata.title}\n"
+            f"{summary}\n"
+            f"{deck}\n"
+            f"{content}"
         )
-        pprint(article)
-        articles.append(article)
-    return articles
+        inputs.append(prompt)
+    results = await model.abatch(inputs=inputs)
+    return [result.content for result in results]
+
+
+async def generate_embeddings(
+    articles: list[ExtractedArticle], summaries: list[str], embeddings: Embeddings
+) -> list[list[float]]:
+    decks = [f"{article.title}\n{summary}" for article, summary in zip(articles, summaries)]
+    article_embeddings = await embeddings.aembed_documents(decks)
+    return article_embeddings
