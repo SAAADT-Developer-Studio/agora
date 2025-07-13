@@ -1,13 +1,15 @@
 import asyncio
 import time
 import logging
+from langchain_core.embeddings import Embeddings
+from pprint import pprint
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from app.extractor.extractor import Extractor, ExtractedArticle
 from app.database.database import Database, Article
-from pprint import pprint
 from app.feeds.fetch_articles import fetch_articles
-from langchain_core.embeddings import Embeddings
 from app.utils.concurrency import run_concurrently_with_limit
-from tenacity import retry, stop_after_attempt, wait_exponential
+from app.providers.news_provider import ArticleMetadata
 
 
 async def process(
@@ -40,24 +42,11 @@ async def process(
     ]
 
     # TODO: errors
-    articles_embeddings = await generate_embeddings(extracted_articles, embeddings)
+    articles_embeddings = generate_embeddings(extracted_articles, embeddings)
 
-    articles = []
-    for article_metadata, extracted_article, embedding in zip(
+    articles = join_articles(
         new_article_metadatas, extracted_articles, articles_embeddings
-    ):
-        article = Article(
-            url=article_metadata.link,
-            title=article_metadata.title,
-            author=extracted_article.author,
-            deck=extracted_article.deck,
-            content=extracted_article.content,
-            published_at=article_metadata.published_at,
-            embedding=embedding,
-            news_provider_key=article_metadata.provider_key,
-        )
-        pprint(article)
-        articles.append(article)
+    )
 
     # TODO: error handling
     db.bulk_insert_articles(articles)
@@ -80,9 +69,33 @@ async def extract_article(url: str, extractor: Extractor):
         logging.error(f"Error extracting article from {url}: {e}")
 
 
-async def generate_embeddings(
+def generate_embeddings(
     articles: list[ExtractedArticle], embeddings: Embeddings
 ) -> list[list[float]]:
     decks = [article.deck for article in articles]
     article_embeddings = embeddings.embed_documents(decks)
     return article_embeddings
+
+
+def join_articles(
+    article_metadatas: list[ArticleMetadata],
+    extracted_articles: list[ExtractedArticle],
+    articles_embeddings: list[list[float]],
+):
+    articles = []
+    metadata_map = {meta.link: meta for meta in article_metadatas}
+    for extracted_article, embedding in zip(extracted_articles, articles_embeddings):
+        article_metadata = metadata_map[extracted_article.url]
+        article = Article(
+            url=article_metadata.link,
+            title=article_metadata.title,
+            author=extracted_article.author,
+            deck=extracted_article.deck,
+            content=extracted_article.content,
+            published_at=article_metadata.published_at,
+            embedding=embedding,
+            news_provider_key=article_metadata.provider_key,
+        )
+        pprint(article)
+        articles.append(article)
+    return articles
