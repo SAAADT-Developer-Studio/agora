@@ -78,7 +78,7 @@ async def process(
 
     end_time = time.perf_counter()
     logging.info(
-        f"Successfully processed {len(articles)} new articles in  {(end_time - start_time):.3f} seconds!"
+        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Successfully processed {len(articles)} new articles in {(end_time - start_time):.3f} seconds!"
     )
 
 
@@ -130,6 +130,6 @@ async def generate_summaries(
 async def generate_embeddings(
     articles: list[ExtractedArticle], summaries: list[str], embeddings: Embeddings
 ) -> list[list[float]]:
-    decks = [f"{article.title}\n{summary}" for article, summary in zip(articles, summaries)]
-    article_embeddings = await embeddings.aembed_documents(decks)
+    documents = [f"{article.title}\n{summary}" for article, summary in zip(articles, summaries)]
+    article_embeddings = await embeddings.aembed_documents(documents)
     return article_embeddings
