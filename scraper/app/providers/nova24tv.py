@@ -1,4 +1,5 @@
 from app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.providers import ProviderKey
 
 from datetime import datetime
 import xmltodict
@@ -10,7 +11,7 @@ import httpx
 class Nova24TVProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="nova24tv",
+            key=ProviderKey.NOVA24TV.value,
             name="Nova24TV",
             url="https://nova24tv.si",
             rss_feeds=["https://nova24tv.si/feed"],
