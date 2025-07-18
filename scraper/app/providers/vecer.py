@@ -1,14 +1,14 @@
 from datetime import datetime, timedelta
 import httpx
 
-
 from app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.providers import ProviderKey
 
 
 class VecerProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="vecer",
+            key=ProviderKey.VECER.value,
             name="Večer",
             url="https://vecer.com",
             rss_feeds=["https://feeds.feedburner.com/vecer"],

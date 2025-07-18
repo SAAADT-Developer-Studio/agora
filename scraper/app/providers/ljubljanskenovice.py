@@ -1,10 +1,11 @@
 from app.providers.news_provider import NewsProvider
+from app.providers.providers import ProviderKey
 
 
 class LjNoviceProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="ljubljanskenovice",
+            key=ProviderKey.LJUBLJANSKENOVICE.value,
             name="Ljubljanske novice",
             url="https://ljnovice.si/",
             rss_feeds=["https://ljnovice.si/feed/"],
