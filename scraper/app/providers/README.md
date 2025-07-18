@@ -105,7 +105,9 @@ class DeloProvider(NewsProvider):
 
 ### 3. Add to the list of providers in [providers.py](/scraper/app/providers/providers.py)
 
-### 4. Test the Provider
+### 4. Assign a rank to the provider in [ranks.py](/scraper/app/providers/ranks.py)
+
+### 5. Test the Provider
 
 Verify the new provider by running the following command:
 
@@ -120,7 +122,7 @@ This website already implemented article grouping by news event:
 https://www.times.si/ They scrape periodicaly every 10 minutes. This is where we
 can get ideas for other news sources.
 
-### English, hard to cluster with the other, but still might be important
+### English providers, can still be clustered with others, since embeddings are based on a translated summary
 
 - [ ] [sloveniatimes.py](scraper/app/providers/sloveniatimes.py): USE
       https://www.sloveniatimes.com/feed
