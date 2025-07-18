@@ -1,4 +1,4 @@
-from app.providers.providers import ProviderKey, PROVIDERS
+from app.providers.providers import ProviderKey, NewsProvider
 
 RANKS: dict[int, list[ProviderKey]] = {
     0: [
@@ -39,7 +39,7 @@ RANKS: dict[int, list[ProviderKey]] = {
 }
 
 
-def assign_ranks():
+def assign_ranks(providers: list[NewsProvider]) -> None:
     rank_map = {}
     for rank, keys in RANKS.items():
         for key in keys:
@@ -47,5 +47,5 @@ def assign_ranks():
                 raise ValueError(f"Duplicate provider key found: {key}")
             rank_map[key.value] = rank
 
-    for provider in PROVIDERS:
+    for provider in providers:
         provider.rank = rank_map[provider.key]
