@@ -5,7 +5,7 @@ Contains application-specific operations that combine repository methods.
 
 import app.providers.news_provider as news_provider_module
 from .unit_of_work import UnitOfWork, database_session
-from .database import Article, NewsProvider
+from .schema import Article, NewsProvider
 
 
 class ArticleService:
@@ -61,3 +61,4 @@ class NewsProviderService:
                     if provider_data := provider_data_map.get(provider.key):
                         provider.name = provider_data.name
                         provider.url = provider_data.url
+                        # provider.rank = provider_data.rank

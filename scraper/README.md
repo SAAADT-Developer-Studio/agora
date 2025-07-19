@@ -31,3 +31,14 @@ uv run python3 -m app.main -providers=rtv,delo
 docker build -t vidik-scraper .
 docker run --env-file ./.env vidik-scraper
 ```
+
+### Migrations
+
+```bash
+uv run alembic revision --autogenerate -m "added or removed something"
+# check /scraper/alembic/versions/[migration].py if the migration is ok
+uv run alembic upgrade head
+
+# check if the migration was applied sucessfully
+uv run alembic check
+```

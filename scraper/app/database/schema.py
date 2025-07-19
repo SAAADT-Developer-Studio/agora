@@ -29,6 +29,9 @@ class Article(Base):
     news_provider_key = Column(String, ForeignKey("news_provider.key"), nullable=False)
     news_provider = relationship("NewsProvider", back_populates="articles")
 
+    cluster_id = Column(Integer, ForeignKey("cluster.id"), nullable=True)
+    cluster = relationship("Cluster", back_populates="articles")
+
     def __repr__(self):
         return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
 
@@ -45,17 +48,18 @@ class NewsProvider(Base):
         return f"<NewsProvider(id={self.id}, name={self.name}, key={self.key})>"
 
 
-# class Cluster(Base):
-#     __tablename__ = "cluster"
-#     id = Column(Integer, primary_key=True)
-#     title = Column(String, unique=True, nullable=False)
+class Cluster(Base):
+    __tablename__ = "cluster"
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
 
-#     def __repr__(self):
-#         return f"<Cluster(id={self.id}, name={self.name})>"
+    articles = relationship("Article", back_populates="cluster")
+
+    def __repr__(self):
+        return f"<Cluster(id={self.id}, title={self.title})>"
+
 
 engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 
-# TODO: use https://alembic.sqlalchemy.org/en/latest/ in production
-# Create tables
-Base.metadata.create_all(engine)
+# Tables are managed by Alembic migrations

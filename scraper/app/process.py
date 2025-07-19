@@ -7,7 +7,7 @@ from pprint import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.extractor.extractor import Extractor, ExtractedArticle
-from app.database.database import Article
+from scraper.app.database.schema import Article
 from app.database.unit_of_work import database_session
 from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
@@ -79,7 +79,8 @@ async def process(
         # TODO: error handling
         ArticleService.bulk_create_articles(articles, uow)
 
-        # cluster(articles_embeddings)  # TODO: Save clusters to database
+        # TODO: Save clusters to database
+        # labels = cluster(articles_embeddings)
 
         end_time = time.perf_counter()
         logging.info(

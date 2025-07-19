@@ -7,7 +7,7 @@ This package provides:
 - Service layer for business logic
 """
 
-from .database import Article, NewsProvider, Base, engine, Session
+from .schema import Article, NewsProvider, Base, engine, Session
 from .repositories import ArticleRepository, NewsProviderRepository
 from .unit_of_work import UnitOfWork, database_session, database_transaction
 from .services import ArticleService, NewsProviderService

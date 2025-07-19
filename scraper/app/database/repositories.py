@@ -5,7 +5,7 @@ Separates concerns and provides clean abstractions for each entity.
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
 from sqlalchemy.orm import Session
-from .database import Article, NewsProvider
+from .schema import Article, NewsProvider
 
 
 class ArticleRepository:
