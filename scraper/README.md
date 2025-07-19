@@ -6,14 +6,23 @@
 - Does DBSCAN clustering on the window of last X articles
 - Generates Cluster Titles with an LLM
 
+## Setup
+
+Install [uv](https://docs.astral.sh/uv)
+
+```bash
+# install packages
+uv sync
+```
+
 ```bash
 # run with
-poetry run python3 -m app.main
+uv run python3 -m app.main
 ```
 
 ```bash
 # limit to certain providers
-poetry run python3 -m app.main -providers=rtv,delo
+uv run python3 -m app.main -providers=rtv,delo
 ```
 
 ### Docker
@@ -21,4 +30,15 @@ poetry run python3 -m app.main -providers=rtv,delo
 ```bash
 docker build -t vidik-scraper .
 docker run --env-file ./.env vidik-scraper
+```
+
+### Migrations
+
+```bash
+uv run alembic revision --autogenerate -m "added or removed something"
+# check /scraper/alembic/versions/[migration].py if the migration is ok
+uv run alembic upgrade head
+
+# check if the migration was applied sucessfully
+uv run alembic check
 ```

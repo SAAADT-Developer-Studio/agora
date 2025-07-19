@@ -64,3 +64,14 @@ resource "digitalocean_database_user" "scraper_user" {
   cluster_id = digitalocean_database_cluster.postgres.id
   name       = "scraper_user"
 }
+
+
+# TODO: firewall should be configured in terraform, currently managed in the UI
+# resource "digitalocean_database_firewall" "scraper_server_fw_rule" {
+#   cluster_id = digitalocean_database_cluster.postgres.id
+
+#   rule {
+#     type  = "ip_addr"
+#     value = "${hcloud_server.scraper_server.ipv4_address}/32"
+#   }
+# }

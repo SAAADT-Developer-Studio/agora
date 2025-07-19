@@ -29,6 +29,9 @@ class Article(Base):
     news_provider_key = Column(String, ForeignKey("news_provider.key"), nullable=False)
     news_provider = relationship("NewsProvider", back_populates="articles")
 
+    cluster_id = Column(Integer, ForeignKey("cluster.id"), nullable=True)
+    cluster = relationship("Cluster", back_populates="articles")
+
     def __repr__(self):
         return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
 
@@ -45,40 +48,18 @@ class NewsProvider(Base):
         return f"<NewsProvider(id={self.id}, name={self.name}, key={self.key})>"
 
 
-# class Cluster(Base):
-#     __tablename__ = "cluster"
-#     id = Column(Integer, primary_key=True)
-#     title = Column(String, unique=True, nullable=False)
+class Cluster(Base):
+    __tablename__ = "cluster"
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
 
-#     def __repr__(self):
-#         return f"<Cluster(id={self.id}, name={self.name})>"
+    articles = relationship("Article", back_populates="cluster")
+
+    def __repr__(self):
+        return f"<Cluster(id={self.id}, title={self.title})>"
+
 
 engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 
-# TODO: use https://alembic.sqlalchemy.org/en/latest/ in production
-# Create tables
-Base.metadata.create_all(engine)
-
-
-class Database:
-    def __init__(self):
-        # Create a session
-        self.session = Session()
-
-    def close(self):
-        self.session.commit()
-        self.session.close()
-
-    def get_articls_by_urls(self, urls_to_check: list[str]) -> set[str]:
-        query_results = self.session.query(Article.url).filter(Article.url.in_(urls_to_check)).all()
-        existing_urls = {result[0] for result in query_results}
-        return existing_urls
-
-    def bulk_insert_articles(self, articles: list[Article]):
-        self.session.bulk_save_objects(articles)
-        self.session.commit()
-
-    def bulk_insert_news_providers(self, providers: list[NewsProvider]):
-        self.session.bulk_save_objects(providers)
-        self.session.commit()
+# Tables are managed by Alembic migrations
