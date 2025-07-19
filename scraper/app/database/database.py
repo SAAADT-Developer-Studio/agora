@@ -59,26 +59,3 @@ Session = sessionmaker(bind=engine)
 # TODO: use https://alembic.sqlalchemy.org/en/latest/ in production
 # Create tables
 Base.metadata.create_all(engine)
-
-
-class Database:
-    def __init__(self):
-        # Create a session
-        self.session = Session()
-
-    def close(self):
-        self.session.commit()
-        self.session.close()
-
-    def get_articls_by_urls(self, urls_to_check: list[str]) -> set[str]:
-        query_results = self.session.query(Article.url).filter(Article.url.in_(urls_to_check)).all()
-        existing_urls = {result[0] for result in query_results}
-        return existing_urls
-
-    def bulk_insert_articles(self, articles: list[Article]):
-        self.session.bulk_save_objects(articles)
-        self.session.commit()
-
-    def bulk_insert_news_providers(self, providers: list[NewsProvider]):
-        self.session.bulk_save_objects(providers)
-        self.session.commit()
