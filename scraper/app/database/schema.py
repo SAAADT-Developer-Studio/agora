@@ -32,7 +32,7 @@ class Article(Base):
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
     news_provider: Mapped["NewsProvider"] = relationship("NewsProvider", back_populates="articles")
 
-    cluster_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cluster.id"))
+    cluster_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cluster.id", ondelete="SET NULL"))
     cluster: Mapped[Optional["Cluster"]] = relationship("Cluster", back_populates="articles")
 
     def __repr__(self):
@@ -45,6 +45,7 @@ class NewsProvider(Base):
     key: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True)
     url: Mapped[str] = mapped_column(String, unique=True)
+    rank: Mapped[Optional[int]] = mapped_column(default=0)
 
     articles: Mapped[List["Article"]] = relationship("Article", back_populates="news_provider")
 
@@ -58,7 +59,9 @@ class Cluster(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String)
 
-    articles: Mapped[List["Article"]] = relationship("Article", back_populates="cluster")
+    articles: Mapped[List["Article"]] = relationship(
+        "Article", back_populates="cluster", passive_deletes=True
+    )
 
     def __repr__(self):
         return f"<Cluster(id={self.id}, title={self.title})>"

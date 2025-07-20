@@ -28,12 +28,14 @@ class NewsProvider(ABC):
         url: str,
         rss_feeds: list[str],
         rss_date_format: str = "%a, %d %b %Y %H:%M:%S %z",
+        rank: int = 0,
     ):
         self.key = key
         self.name = name
         self.url = url
         self.rss_feeds = rss_feeds
         self.rss_date_format = rss_date_format
+        self.rank = rank
 
     async def fetch_articles(self) -> list[ArticleMetadata]:
         """

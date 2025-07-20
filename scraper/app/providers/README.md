@@ -16,36 +16,42 @@ News providers TODO:
 - [x] [slotech.py](scraper/app/providers/slotech.py)
 - [x] [reporter.py](scraper/app/providers/reporter.py)
 - [x] [n1info.py](scraper/app/providers/n1info.py)
-- [ ] [podcrto.py](scraper/app/providers/podcrto.py)
 - [x] [zurnal24.py](scraper/app/providers/zurnal24.py)
 - [x] [slovenskenovice.py](scraper/app/providers/slovenskenovice.py)
 - [x] [sta.py](scraper/app/providers/sta.py): USE https://www.sta.si/rss-0
 - [x] [bloombergadria](https://si.bloombergadria.com/rss)
 - [x] [cekin.py](scraper/app/providers/cekin.py): rss: https://cekin.si/rss
-- [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [x] [demokracija](https://demokracija.si/) https://demokracija.si/
 - [x] [info360](https://info360.si/) https://info360.si//rss.xml
+- [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
+- [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
+- [ ] [nadlani](nadlani.si) https://www.nadlani.si/feed/
+- [ ] [sobota info](https://sobotainfo.com/novice)
+- [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
+- [ ] [mariborinfo](https://mariborinfo.com/)
+- [ ] [ljubljanainfo](https://ljubljanainfo.com/novice)
+- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled
+- [ ] [pomurec](https://pomurec.com/)
+- [ ] [ptujinfo](https://ptujinfo.com/novice)
+- [ ] [obalaplus](https://obalaplus.si/)
+- [ ] [eposavje](https://www.eposavje.com/)
+- [ ] [študent](https://www.student.si/)
 - [ ] [zon](https://zon.si/) https://zon.si/feed/
 - [ ] [insajder](https://insajder.com/)
-- [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
 - [ ] [vestnik](https://vestnik.svet24.si/novice)
 - [ ] [regional](https://www.regionalobala.si/)
 - [ ] [politikis](https://www.politikis.si/)
 - [ ] [monitor](https://www.monitor.si/)
-- [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
 - [ ] [dolenjski list](https://dolenjskilist.svet24.si)
 - [ ] [gorenjski glas](https://www.gorenjskiglas.si)
 - [ ] [ekipa24](https://ekipa.svet24.si)
 - [ ] [moja-dolenjska](https://moja-dolenjska.si/)
 - [ ] [domovina](https://www.domovina.je/)
 - [ ] [casnik](https://casnik.si)
-- [ ] [študent](https://www.student.si/)
-- [ ] [pomurec](https://pomurec.com/)
 - [ ] [pozareport](https://pozareport.si)
 - [ ] [primorski dnevnik](https://www.primorski.eu)
 - [ ] [islamska skupnost novice](https://www.islamska-skupnost.si/novice/)
-- [ ] [sobota info](https://sobotainfo.com/novice)
 - [ ] [celjske novice](https://www.celje.info)
 - [ ] [regional obala](https://www.regionalobala.si)
 - [ ] [velenjcan](https://www.velenjcan.si)
@@ -59,8 +65,7 @@ News providers TODO:
 - [ ] [pomurske novice](https://pomurske-novice.si) https://pomurske-novice.si/feed/
 - [ ] [mojaobcina](https://www.mojaobcina.si/ljubljana) every municipality has its own feed
 - [ ] [posavskiobzornik](https://www.posavskiobzornik.si/)
-- [ ] [eposavje](https://www.eposavje.com/)
-- [ ] [mariborinfo](https://mariborinfo.com/)
+- [ ] [podcrto.py](scraper/app/providers/podcrto.py)
 
 Idea: include government feeds, for example FURS https://www.fu.gov.si/rss
 
@@ -100,7 +105,9 @@ class DeloProvider(NewsProvider):
 
 ### 3. Add to the list of providers in [providers.py](/scraper/app/providers/providers.py)
 
-### 4. Test the Provider
+### 4. Assign a rank to the provider in [ranks.py](/scraper/app/providers/ranks.py)
+
+### 5. Test the Provider
 
 Verify the new provider by running the following command:
 
@@ -115,14 +122,11 @@ This website already implemented article grouping by news event:
 https://www.times.si/ They scrape periodicaly every 10 minutes. This is where we
 can get ideas for other news sources.
 
-### English, hard to cluster with the other, but still might be important
+### English providers, can still be clustered with others, since embeddings are based on a translated summary
 
 - [ ] [sloveniatimes.py](scraper/app/providers/sloveniatimes.py): USE
       https://www.sloveniatimes.com/feed
-
-### paywalled, which sucks
-
-- [ ] [finance.py](scraper/app/providers/finance.py)
+- [ ] [total-slovenia-news](https://www.total-slovenia-news.com/)
 
 ### TODO:
 

@@ -1,10 +1,11 @@
 from app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.keys import ProviderKey
 
 
 class ReporterProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="reporter",
+            key=ProviderKey.REPORTER.value,
             name="Reporter",
             url="https://reporter.si",
             rss_feeds=["https://reporter.si/rss/site.xml"],

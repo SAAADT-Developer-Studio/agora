@@ -4,14 +4,14 @@ import asyncio
 from datetime import datetime
 import itertools
 
-
 from app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.keys import ProviderKey
 
 
 class Maribor24Provider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="maribor24",
+            key=ProviderKey.MARIBOR24.value,
             name="Maribor24",
             url="https://maribor24.si",
             rss_feeds=["https://maribor24.si/feed"],

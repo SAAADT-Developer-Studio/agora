@@ -1,10 +1,11 @@
 from app.providers.news_provider import NewsProvider
+from app.providers.keys import ProviderKey
 
 
 class MladinaProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="mladina",
+            key=ProviderKey.MLADINA.value,
             name="Mladina",
             url="https://www.mladina.si",
             rss_feeds=["https://feeds.feedburner.com/Mladina"],
