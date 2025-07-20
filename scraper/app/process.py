@@ -7,7 +7,7 @@ from pprint import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.extractor.extractor import Extractor, ExtractedArticle
-from scraper.app.database.schema import Article
+from app.database.schema import Article
 from app.database.unit_of_work import database_session
 from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
