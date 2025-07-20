@@ -6,7 +6,7 @@ import itertools
 from app import config
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.providers import ProviderKey
+from app.providers.keys import ProviderKey
 
 
 class _24URProvider(NewsProvider):

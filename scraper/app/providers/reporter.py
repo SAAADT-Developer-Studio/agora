@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.providers import ProviderKey
+from app.providers.keys import ProviderKey
 
 
 class ReporterProvider(NewsProvider):

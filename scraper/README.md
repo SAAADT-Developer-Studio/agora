@@ -25,6 +25,21 @@ uv run python3 -m app.main
 uv run python3 -m app.main -providers=rtv,delo
 ```
 
+## Testing
+
+```bash
+# Install test dependencies
+uv sync --group test
+
+# Run tests
+make test
+# or
+uv run pytest
+
+# Run tests with verbose output
+make test-verbose
+```
+
 ### Docker
 
 ```bash

@@ -1,0 +1,55 @@
+name: Test Scraper
+
+on:
+  pull_request:
+    paths:
+      - "scraper/**"
+      - ".github/workflows/test-scraper.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./scraper
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv sync --group test
+
+      # TODO: Add database setup when integration tests are added
+      # TODO: Add environment variable setup for testing
+      # TODO: Add linting/formatting checks (black, mypy, ruff)
+
+      - name: Run tests
+        run: |
+          uv run pytest
+
+      # TODO: Add coverage reporting when needed
+      # TODO: Add test result artifacts when test suite grows
+
+# this action does not work, since the ip address of the runner is not whitelisted in the database
+#   check-migration:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Check Alembic Migration Version
+#         uses: DevGlitch/alembic-migration-checker@v1.1
+#         with:
+#           db_url: ${{ secrets.DATABASE_URL }} # Format: postgresql+psycopg2://user:password@host:port/dbname
+#           migrations_path: ./scraper/alembic/versions/
+

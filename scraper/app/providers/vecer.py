@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.providers import ProviderKey
+from app.providers.keys import ProviderKey
 
 
 class VecerProvider(NewsProvider):

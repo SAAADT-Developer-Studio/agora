@@ -3,7 +3,7 @@ from app.extractor.crawl4ai import extract
 
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.providers import ProviderKey
+from app.providers.keys import ProviderKey
 
 
 class PrimorskeNoviceProvider(NewsProvider):

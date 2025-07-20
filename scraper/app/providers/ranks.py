@@ -1,4 +1,5 @@
-from app.providers.providers import ProviderKey, NewsProvider
+from app.providers.keys import ProviderKey
+from app.providers.providers import NewsProvider
 
 RANKS: dict[int, list[ProviderKey]] = {
     0: [
@@ -25,7 +26,6 @@ RANKS: dict[int, list[ProviderKey]] = {
         ProviderKey.DEMOKRACIJA,
         ProviderKey.CEKIN,
         ProviderKey.INFO360,
-
     ],
     3: [
         ProviderKey.BLOOMBERGADRIA,
@@ -35,7 +35,7 @@ RANKS: dict[int, list[ProviderKey]] = {
     4: [
         ProviderKey.MLADINA,
         ProviderKey.SLOTECH,
-    ]
+    ],
 }
 
 
