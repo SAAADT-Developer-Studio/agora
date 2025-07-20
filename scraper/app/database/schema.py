@@ -45,6 +45,7 @@ class NewsProvider(Base):
     key: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True)
     url: Mapped[str] = mapped_column(String, unique=True)
+    rank: Mapped[Optional[int]] = mapped_column(default=0)
 
     articles: Mapped[List["Article"]] = relationship("Article", back_populates="news_provider")
 

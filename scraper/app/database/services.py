@@ -6,6 +6,7 @@ Contains application-specific operations that combine repository methods.
 import app.providers.news_provider as news_provider_module
 from .unit_of_work import UnitOfWork, database_session
 from .schema import Article, NewsProvider
+from app.providers.ranks import assign_ranks
 
 
 class ArticleService:
@@ -34,6 +35,7 @@ class NewsProviderService:
         Synchronize news providers with the database.
         Updates existing providers and creates new ones.
         """
+        assign_ranks(providers)
         with database_session() as uow:
             existing_keys = uow.news_providers.get_existing_keys()
 
@@ -61,4 +63,4 @@ class NewsProviderService:
                     if provider_data := provider_data_map.get(provider.key):
                         provider.name = provider_data.name
                         provider.url = provider_data.url
-                        # provider.rank = provider_data.rank
+                        provider.rank = provider_data.rank
