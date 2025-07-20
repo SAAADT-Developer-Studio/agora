@@ -3,7 +3,6 @@ import hdbscan
 import numpy as np
 import pandas as pd
 from umap import UMAP
-import plotly.express as px
 from pprint import pprint
 from sklearn.preprocessing import Normalizer
 from typing import Iterable
@@ -158,6 +157,8 @@ if __name__ == "__main__":
         .query('cluster != "-1"')
         .sort_values(by="cluster")
     )
+
+    import plotly.express as px
 
     fig = px.scatter(df_umap, x="x", y="y", color="cluster")
     fig.show()
