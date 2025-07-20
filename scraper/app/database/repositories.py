@@ -35,7 +35,7 @@ class ArticleRepository:
 
     def bulk_create(self, articles: list[Article]) -> None:
         """Bulk insert articles."""
-        self.session.bulk_save_objects(articles)
+        self.session.add_all(articles)
 
     def get_clustered_and_pad_articles(self) -> list[Article]:
         clustered = select(Article).where(Article.cluster_id.is_not(None)).cte(name="clustered")
@@ -76,7 +76,7 @@ class NewsProviderRepository:
 
     def bulk_create(self, providers: list[NewsProvider]) -> None:
         """Bulk insert news providers."""
-        self.session.bulk_save_objects(providers)
+        self.session.bulk_save_objects(providers)  # TODO: use add_all for consistency
 
     def create(self, provider: NewsProvider) -> NewsProvider:
         """Create a single news provider."""

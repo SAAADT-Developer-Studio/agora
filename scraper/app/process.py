@@ -80,6 +80,7 @@ async def process(
         ArticleService.bulk_create_articles(articles, uow)
 
         uow.commit()
+        uow.session.flush()
 
         await run_clustering(uow, articles)
 
