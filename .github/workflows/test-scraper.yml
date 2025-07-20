@@ -30,16 +30,19 @@ jobs:
           uv sync --group test
 
       # TODO: Add database setup when integration tests are added
-      # TODO: Add environment variable setup for testing
       # TODO: Add linting/formatting checks (black, mypy, ruff)
 
       - name: Run tests
         run: |
           uv run pytest
+        env:
+          APP_ENV: test
+          GOOGLE_API_KEY: test_key_not_used_in_unit_tests
+          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+          OPENAI_API_KEY: test_key_not_used_in_unit_tests
 
       # TODO: Add coverage reporting when needed
       # TODO: Add test result artifacts when test suite grows
-
 # this action does not work, since the ip address of the runner is not whitelisted in the database
 #   check-migration:
 #     runs-on: ubuntu-latest
