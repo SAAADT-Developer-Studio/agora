@@ -6,9 +6,9 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.extractor.extractor import Extractor
 from app.extractor.readability_extractor import ReadabilityExtractor
-from app.database.database import Database
-from app.database.seed_news_providers import seed_new_providers
+from app.database.services import NewsProviderService
 from app.process import process
+from app.providers.providers import PROVIDERS
 
 
 async def main() -> None:
@@ -27,8 +27,7 @@ async def main() -> None:
 
     providers: list[str] | None = args.providers
 
-    # TODO: move somewhere else?
-    seed_new_providers()
+    NewsProviderService.sync_providers(PROVIDERS)
 
     # TODO: implement recovering from a checkpoint timestamp
     # in case the scraper crashes, so we don't miss any articles
@@ -44,16 +43,12 @@ async def main() -> None:
 async def run(providers: list[str] | None = None) -> None:
     extractor: Extractor = ReadabilityExtractor()
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
-    db = Database()
 
     await process(
         extractor=extractor,
-        db=db,
         providers=providers,
         embeddings=embeddings,
     )
-
-    db.close()
 
 
 if __name__ == "__main__":

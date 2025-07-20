@@ -112,7 +112,7 @@ class DeloProvider(NewsProvider):
 Verify the new provider by running the following command:
 
 ```bash
-poetry run python3 -m app.main --providers=delo
+uv run python3 -m app.main --providers=delo
 
 ```
 

@@ -1,31 +1,36 @@
-FROM python:3.13-slim-bookworm AS base
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
-FROM base AS builder
+# Install the project into `/app`
+WORKDIR /app
+
+# Enable bytecode compilation
+ENV UV_COMPILE_BYTECODE=1
+
+# Copy from the cache instead of linking since it's a mounted volume
+ENV UV_LINK_MODE=copy
 
 RUN apt-get update && apt-get install -y build-essential
 
-RUN pip install poetry==1.4.2
+# Install the project's dependencies using the lockfile and settings
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-dev
 
-ENV POETRY_NO_INTERACTION=1 \
-    POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_VIRTUALENVS_CREATE=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
+# Then, add the rest of the project source code and install it
+# Installing separately from its dependencies allows optimal layer caching
+COPY . /app
 
-WORKDIR /app
+RUN touch /app/README.md
 
-COPY pyproject.toml poetry.lock ./
-RUN touch README.md
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
 
-RUN poetry install --without dev --no-root && rm -rf $POETRY_CACHE_DIR
+# Place executables in the environment at the front of the path
+ENV PATH="/app/.venv/bin:$PATH"
 
-# The runtime image, used to just run the code provided its virtual environment
-FROM base AS runtime
+# Reset the entrypoint, don't invoke `uv`
+ENTRYPOINT []
 
-ENV VIRTUAL_ENV=/app/.venv \
-    PATH="/app/.venv/bin:$PATH"
 
-COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-
-COPY app ./app
-
-ENTRYPOINT ["python", "-m", "app.main"]
+CMD ["python3", "-m", "app.main"]
