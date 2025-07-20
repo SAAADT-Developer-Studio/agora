@@ -4,8 +4,10 @@ Separates concerns and provides clean abstractions for each entity.
 """
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from .schema import Article, NewsProvider
+from .schema import Article, NewsProvider, Cluster
+from datetime import datetime, timedelta, timezone
 
 
 class ArticleRepository:
@@ -35,10 +37,23 @@ class ArticleRepository:
         """Bulk insert articles."""
         self.session.bulk_save_objects(articles)
 
-    def create(self, article: Article) -> Article:
-        """Create a single article."""
-        self.session.add(article)
-        return article
+    def get_clustered_and_pad_articles(self) -> list[Article]:
+        clustered = select(Article).where(Article.cluster_id.is_not(None)).cte(name="clustered")
+
+        clustered_cnt_sq = select(func.count()).select_from(clustered).scalar_subquery()
+
+        pad = (
+            select(Article)
+            .where(Article.cluster_id.is_(None))
+            .order_by(Article.published_at.desc())
+            .limit(func.greatest(0, 2000 - clustered_cnt_sq))
+            .cte(name="pad")
+        )
+
+        query = select(clustered).union_all(select(pad))
+        stmt = select(Article).from_statement(query)
+        result = self.session.scalars(stmt).all()
+        return result
 
 
 class NewsProviderRepository:
@@ -71,3 +86,38 @@ class NewsProviderRepository:
     def update(self, provider: NewsProvider) -> NewsProvider:
         """Update a news provider (already tracked by session)."""
         return provider
+
+
+class ClusterRepository:
+    """Repository for Cluster entity operations."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_by_id(self, cluster_id: int) -> Cluster | None:
+        """Get cluster by ID."""
+        return self.session.query(Cluster).filter(Cluster.id == cluster_id).first()
+
+    def bulk_create(self, clusters: list[Cluster]) -> None:
+        """Bulk insert clusters."""
+        self.session.add_all(clusters)
+
+    def delete_by_ids(self, cluster_ids: list[int]) -> None:
+        """Delete clusters by IDs."""
+        self.session.query(Cluster).filter(Cluster.id.in_(cluster_ids)).delete(
+            synchronize_session=False
+        )
+
+    def delete_old_clusters(self) -> None:
+        """Delete clusters whose most recent article is older than 3 days."""
+        three_days_ago = datetime.now() - timedelta(days=3)
+
+        subq = (
+            self.session.query(Article.cluster_id)
+            .group_by(Article.cluster_id)
+            .having(func.max(Article.published_at) < three_days_ago)
+            .subquery()
+        )
+        self.session.query(Cluster).filter(
+            Cluster.id.in_(select(subq.c.cluster_id)), Cluster.id.isnot(None)
+        ).delete(synchronize_session=False)

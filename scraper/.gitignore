@@ -58,3 +58,6 @@ venv.bak/
 .vscode/
 *.swp
 
+# local clustring files
+articles.json
+clusters.json

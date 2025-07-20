@@ -13,7 +13,7 @@ from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
 from app.utils.concurrency import run_concurrently_with_limit
 from app.providers.news_provider import ArticleMetadata
-from app.clusterer.cluster import cluster
+from app.clusterer.cluster import run_clustering
 
 
 async def process(
@@ -55,7 +55,7 @@ async def process(
 
         articles_embeddings = await generate_embeddings(extracted_articles, summaries, embeddings)
 
-        articles = []
+        articles: list[Article] = []
         for article_metadata, extracted_article, summary, embedding in zip(
             new_article_metadatas,
             extracted_articles,
@@ -79,8 +79,9 @@ async def process(
         # TODO: error handling
         ArticleService.bulk_create_articles(articles, uow)
 
-        # TODO: Save clusters to database
-        # labels = cluster(articles_embeddings)
+        uow.commit()
+
+        await run_clustering(uow, articles)
 
         end_time = time.perf_counter()
         logging.info(
