@@ -4,22 +4,31 @@ from sqlalchemy import (
     create_engine,
     String,
     Float,
+    Integer,
     DateTime,
     ForeignKey,
 )
-from sqlalchemy.orm import sessionmaker, DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    sessionmaker,
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    MappedAsDataclass,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 import app.config as config
+from dataclasses import dataclass
 
 
-class Base(DeclarativeBase):
+class Base(MappedAsDataclass, DeclarativeBase):
     pass
 
 
 class Article(Base):
     __tablename__ = "article"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
     url: Mapped[str] = mapped_column(String, unique=True)
     title: Mapped[str] = mapped_column(String)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -28,13 +37,19 @@ class Article(Base):
     author: Mapped[Optional[str]] = mapped_column(String)
     content: Mapped[Optional[str]] = mapped_column(String)
     embedding: Mapped[List[float]] = mapped_column(ARRAY(Float))
-    image_urls: Mapped[List[str]] = mapped_column(ARRAY(String))
+    image_urls: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
 
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
-    news_provider: Mapped["NewsProvider"] = relationship("NewsProvider", back_populates="articles")
+    news_provider: Mapped["NewsProvider"] = relationship(
+        "NewsProvider", back_populates="articles", init=False
+    )
 
-    cluster_id: Mapped[Optional[int]] = mapped_column(ForeignKey("cluster.id", ondelete="SET NULL"))
-    cluster: Mapped[Optional["Cluster"]] = relationship("Cluster", back_populates="articles")
+    cluster_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("cluster.id", ondelete="SET NULL"), init=False
+    )
+    cluster: Mapped[Optional["Cluster"]] = relationship(
+        "Cluster", back_populates="articles", init=False
+    )
 
     def __repr__(self):
         return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
@@ -46,22 +61,24 @@ class NewsProvider(Base):
     key: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True)
     url: Mapped[str] = mapped_column(String, unique=True)
-    rank: Mapped[Optional[int]] = mapped_column(default=0)
+    rank: Mapped[int] = mapped_column(Integer)
 
-    articles: Mapped[List["Article"]] = relationship("Article", back_populates="news_provider")
+    articles: Mapped[List["Article"]] = relationship(
+        "Article", back_populates="news_provider", init=False
+    )
 
     def __repr__(self):
-        return f"<NewsProvider(key={self.key}, name={self.name})>"
+        return f"<NewsProvider(key={self.key}, name={self.name}, url={self.url})>"
 
 
 class Cluster(Base):
     __tablename__ = "cluster"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
     title: Mapped[str] = mapped_column(String)
 
     articles: Mapped[List["Article"]] = relationship(
-        "Article", back_populates="cluster", passive_deletes=True
+        "Article", back_populates="cluster", passive_deletes=True, init=False
     )
 
     def __repr__(self):

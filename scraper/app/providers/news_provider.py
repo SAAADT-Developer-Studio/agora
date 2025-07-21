@@ -45,7 +45,7 @@ class NewsProvider(ABC):
         Returns:
             A list of article metadata.
         """
-        articles = []
+        articles: list[ArticleMetadata] = []
         async with httpx.AsyncClient() as client:
             for feed_url in self.rss_feeds:
                 try:
@@ -79,7 +79,7 @@ class NewsProvider(ABC):
             published_at=date,
             summary=entry["summary"],
             provider_key=self.key,
-            image_urls=entry["enclosures"]
+            image_urls=entry["enclosures"],
         )
 
     def get_link(self, link: str) -> str:
