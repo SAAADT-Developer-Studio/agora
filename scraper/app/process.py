@@ -28,7 +28,7 @@ async def process(
         article_urls = [article_metadata.link for article_metadata in article_metadatas]
         existing_urls = uow.articles.get_existing_urls(article_urls)
 
-        new_article_metadatas = [
+        new_article_metadatas: list[ArticleMetadata] = [
             article_metadata
             for article_metadata in article_metadatas
             if article_metadata.link not in existing_urls
@@ -64,7 +64,7 @@ async def process(
         ):
             article = Article(
                 url=article_metadata.link,
-                title=article_metadata.title,
+                title=article_metadata.title or extracted_article.title,
                 author=extracted_article.author,
                 deck=extracted_article.deck,
                 content=extracted_article.content,
@@ -72,10 +72,10 @@ async def process(
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
+                image_urls=article_metadata.image_urls,
             )
             pprint(article)
             articles.append(article)
-
         # TODO: error handling
         ArticleService.bulk_create_articles(articles, uow)
 
@@ -106,7 +106,7 @@ def join_articles(
     article_metadatas: list[ArticleMetadata],
     extracted_articles: list[ExtractedArticle],
 ):
-    metadatas = []
+    metadatas: list[ArticleMetadata] = []
     metadata_map = {meta.link: meta for meta in article_metadatas}
     for extracted_article in extracted_articles:
         metadatas.append(metadata_map[extracted_article.url])
