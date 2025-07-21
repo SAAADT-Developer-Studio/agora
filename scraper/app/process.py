@@ -72,6 +72,7 @@ async def process(
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
+                image_urls=article_metadata.image_urls
             )
             pprint(article)
             articles.append(article)

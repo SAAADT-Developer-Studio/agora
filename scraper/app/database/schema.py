@@ -28,6 +28,7 @@ class Article(Base):
     author: Mapped[Optional[str]] = mapped_column(String)
     content: Mapped[Optional[str]] = mapped_column(String)
     embedding: Mapped[List[float]] = mapped_column(ARRAY(Float))
+    image_urls: Mapped[List[str]] = mapped_column(ARRAY(String))
 
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
     news_provider: Mapped["NewsProvider"] = relationship("NewsProvider", back_populates="articles")
