@@ -72,6 +72,7 @@ class NewsProvider(ABC):
         if "published" in entry:
             date = datetime.strptime(entry["published"], self.rss_date_format)
         entry["summary"] = entry.get("summary")
+        image_urls = [enclosure["href"] for enclosure in entry.get("enclosures", [])]
 
         return ArticleMetadata(
             title=entry["title"],
@@ -79,7 +80,7 @@ class NewsProvider(ABC):
             published_at=date,
             summary=entry["summary"],
             provider_key=self.key,
-            image_urls=entry["enclosures"],
+            image_urls=image_urls,
         )
 
     def get_link(self, link: str) -> str:
