@@ -107,7 +107,9 @@ class DeloProvider(NewsProvider):
 
 ### 4. Assign a rank to the provider in [ranks.py](/scraper/app/providers/ranks.py)
 
-### 5. Test the Provider
+### 5. Find the logo and save it in /data/logos
+
+### 6. Test the Provider
 
 Verify the new provider by running the following command:
 
