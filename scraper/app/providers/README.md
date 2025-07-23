@@ -115,7 +115,6 @@ Verify the new provider by running the following command:
 
 ```bash
 uv run python3 -m app.main --providers=delo
-
 ```
 
 ## Other
