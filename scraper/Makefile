@@ -12,8 +12,8 @@ test:
 test-verbose:
 	uv run pytest -v
 
-transform-images:
-	uv run python3 scripts/transform_images.py
+sync-images:
+	uv run python3 scripts/sync_images.py
 
 # TODO: Add lint, format, type-check targets
 # TODO: Add test-watch target for development
