@@ -107,13 +107,19 @@ class DeloProvider(NewsProvider):
 
 ### 4. Assign a rank to the provider in [ranks.py](/scraper/app/providers/ranks.py)
 
-### 5. Test the Provider
+### 5. Find the provider logo, resize if needed to get 1x1 aspect ratio.
+
+```bash
+# Store logo  in /data/logos_source and run
+make sync-images
+```
+
+### 6. Test the Provider
 
 Verify the new provider by running the following command:
 
 ```bash
 uv run python3 -m app.main --providers=delo
-
 ```
 
 ## Other
