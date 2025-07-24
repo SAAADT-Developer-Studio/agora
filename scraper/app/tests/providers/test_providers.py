@@ -1,5 +1,6 @@
 from app.providers.keys import ProviderKey
 import os
+import boto3
 
 
 def test_if_provider_logos_exist():
@@ -10,3 +11,6 @@ def test_if_provider_logos_exist():
     for key in ProviderKey:
         if key.value not in logo_filenames:
             raise AssertionError(f"Logo for {key.value} does not exist in {logos_dir}")
+
+
+# TODO: check if logos are synced with the R2 bucket
