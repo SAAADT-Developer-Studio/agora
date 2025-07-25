@@ -13,6 +13,7 @@ class ArticleMetadata:
 
     link: str
     provider_key: str
+    image_urls: list[str]
     published_at: datetime = field(default_factory=datetime.now)
     title: Optional[str] = None
     summary: Optional[str] = None
@@ -44,7 +45,7 @@ class NewsProvider(ABC):
         Returns:
             A list of article metadata.
         """
-        articles = []
+        articles: list[ArticleMetadata] = []
         async with httpx.AsyncClient() as client:
             for feed_url in self.rss_feeds:
                 try:
@@ -71,13 +72,15 @@ class NewsProvider(ABC):
         if "published" in entry:
             date = datetime.strptime(entry["published"], self.rss_date_format)
         entry["summary"] = entry.get("summary")
-        entry["title"] = entry["title"]
+        image_urls = [enclosure["href"] for enclosure in entry.get("enclosures", [])]
+
         return ArticleMetadata(
             title=entry["title"],
             link=self.get_link(entry["link"]),
             published_at=date,
             summary=entry["summary"],
             provider_key=self.key,
+            image_urls=image_urls,
         )
 
     def get_link(self, link: str) -> str:

@@ -45,7 +45,8 @@ class NewsProviderService:
 
             # Create new providers
             new_providers = [
-                NewsProvider(name=p.name, key=p.key, url=p.url) for p in new_providers_data
+                NewsProvider(name=p.name, key=p.key, url=p.url, rank=p.rank)
+                for p in new_providers_data
             ]
             if new_providers:
                 uow.news_providers.bulk_create(new_providers)
