@@ -1,6 +1,6 @@
-# Agora API
+# Vidik API
 
-REST API for the Agora news aggregation platform.
+REST API for the Vidik news aggregation platform.
 
 ## Project Structure
 
@@ -8,6 +8,7 @@ REST API for the Agora news aggregation platform.
 api/
 ├── app/
 │   ├── __init__.py
+│   ├── main.py                # FastAPI application entry point
 │   ├── config.py              # Configuration settings
 │   ├── database/
 │   │   └── __init__.py        # Database connection and session management
@@ -44,7 +45,8 @@ uv sync
 4. Run the API:
 
 ```bash
-uv run python main.py
+# uv run python main.py
+uv run fastapi dev
 ```
 
 ## API Endpoints

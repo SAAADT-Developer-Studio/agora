@@ -6,9 +6,15 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.116.1",
-    "magnum>=20.0.0",
+    "mangum>=0.19.0",
     "psycopg2-binary>=2.9.10",
     "python-dotenv>=1.1.1",
     "sqlalchemy>=2.0.41",
     "uvicorn>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    # In development mode, include the FastAPI development server.
+    "fastapi[standard]>=0.115",
 ]

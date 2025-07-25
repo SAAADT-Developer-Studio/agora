@@ -1,6 +1,7 @@
 """Main FastAPI application entry point."""
 
 from fastapi import FastAPI
+from mangum import Mangum
 
 from app.config import settings
 from app.routers import clusters, providers, feed, people
@@ -27,16 +28,19 @@ async def health_check():
 async def root():
     """Root endpoint."""
     return {
-        "message": "Welcome to Agora API",
+        "message": "Welcome to Vidik API",
         "version": settings.API_VERSION,
         "docs": "/docs",
         "health": "/health",
     }
 
 
-if __name__ == "__main__":
-    import uvicorn
+handler = Mangum(app)
 
-    uvicorn.run(
-        "main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG
-    )
+
+# if __name__ == "__main__":
+#     import uvicorn
+
+#     uvicorn.run(
+#         "main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG
+#     )

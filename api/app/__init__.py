@@ -1,1 +1,1 @@
-"""Agora API application."""
+"""Vidik API application."""

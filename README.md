@@ -1,4 +1,4 @@
-# Agora
+# Vidik
 
 Similar website that already has article clustering by news event: https://www.times.si/
 
