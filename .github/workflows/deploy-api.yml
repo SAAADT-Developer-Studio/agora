@@ -1,0 +1,47 @@
+name: Build and Deploy Rest API
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - api/**
+      - "!api/**/*.md"
+
+env:
+  DOCKER_IMAGE_NAME: vidik-api
+  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }} # Use a PAT for security
+
+      - name: Build and Push Docker Image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: api
+          push: true
+          tags: |
+            ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          cache-from: type=gha # Cache layers to speed up builds
+          cache-to: type=gha,mode=max
+
+      - name: Output Image Details
+        run: |
+          echo "Image pushed successfully!"
+          echo "Image: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}"
+          echo "Latest: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest"
