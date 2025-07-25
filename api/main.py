@@ -5,14 +5,12 @@ from fastapi import FastAPI
 from app.config import settings
 from app.routers import clusters, providers, feed, people
 
-# Create FastAPI application
 app = FastAPI(
     title=settings.API_TITLE,
     version=settings.API_VERSION,
     description=settings.API_DESCRIPTION,
 )
 
-# Include routers
 app.include_router(clusters.router)
 app.include_router(providers.router)
 app.include_router(feed.router)
