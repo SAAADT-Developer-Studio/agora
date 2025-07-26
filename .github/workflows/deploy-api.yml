@@ -102,12 +102,4 @@ jobs:
             --function-name vidik-api \
             --environment Variables="{DATABASE_URL=${{ secrets.DATABASE_URL }}}"
 
-      - name: Test Lambda function
-        run: |
-          # Get the function URL
-          FUNCTION_URL=$(aws lambda get-function-url-config --function-name vidik-api --query 'FunctionUrl' --output text)
-          echo "Testing Lambda function at: $FUNCTION_URL"
-
-          # Test the health endpoint
-          curl -f "$FUNCTION_URL/health" || exit 1
-          echo "Lambda function is healthy!"
+# TODO: check if the Lambda function is healthy

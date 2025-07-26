@@ -34,3 +34,30 @@ output "database_uri" {
   description = "The full connection URI for the PostgreSQL database."
   sensitive   = true
 }
+
+# ECR outputs
+output "ecr_repository_url" {
+  value       = aws_ecr_repository.vidik_api_repo.repository_url
+  description = "The URL of the ECR repository for the API."
+}
+
+output "ecr_repository_name" {
+  value       = aws_ecr_repository.vidik_api_repo.name
+  description = "The name of the ECR repository."
+}
+
+output "lambda_function_name" {
+  value       = aws_lambda_function.vidik_api.function_name
+  description = "The name of the Lambda function."
+}
+
+output "lambda_function_arn" {
+  value       = aws_lambda_function.vidik_api.arn
+  description = "The ARN of the Lambda function."
+}
+
+// TODO: connect this public URL to api.vidik.si
+output "lambda_function_url" {
+  value       = aws_lambda_function_url.vidik_api_url.function_url
+  description = "The public URL for the Lambda function."
+}

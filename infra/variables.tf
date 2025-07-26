@@ -31,3 +31,9 @@ variable "cf_api_token" {
   description = "Cloudflare API Key"
   sensitive   = true # Mark as sensitive to prevent logging
 }
+
+variable "aws_region" {
+  type        = string
+  description = "AWS region"
+  default     = "eu-central-1"
+}
