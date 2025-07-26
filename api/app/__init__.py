@@ -1,0 +1,1 @@
+"""Vidik API application."""

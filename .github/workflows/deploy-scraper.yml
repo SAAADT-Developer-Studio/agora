@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - scraper/**
-      - "!scraper/**/.md"
+      - "!scraper/**/*.md"
 
 env:
   DOCKER_IMAGE_NAME: vidik-scraper

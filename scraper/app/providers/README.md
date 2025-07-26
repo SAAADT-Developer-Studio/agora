@@ -30,7 +30,7 @@ News providers TODO:
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [ ] [mariborinfo](https://mariborinfo.com/)
 - [ ] [ljubljanainfo](https://ljubljanainfo.com/novice)
-- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled
+- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [pomurec](https://pomurec.com/)
 - [ ] [ptujinfo](https://ptujinfo.com/novice)
 - [ ] [obalaplus](https://obalaplus.si/)

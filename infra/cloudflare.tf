@@ -1,4 +1,3 @@
-
 provider "cloudflare" {
   api_token = var.cf_api_token
 }
@@ -11,6 +10,7 @@ resource "cloudflare_r2_bucket" "images_bucket" {
 }
 
 
+// TODO: add cors
 resource "cloudflare_r2_custom_domain" "images_custom_domain" {
   account_id   = var.cf_account_id
   bucket_name  = cloudflare_r2_bucket.images_bucket.name
@@ -19,5 +19,3 @@ resource "cloudflare_r2_custom_domain" "images_custom_domain" {
   zone_id      = var.cf_zone_id
   jurisdiction = "eu"
 }
-
-// TODO: add cors
