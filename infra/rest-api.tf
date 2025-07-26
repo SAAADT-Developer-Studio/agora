@@ -84,8 +84,7 @@ resource "aws_lambda_function" "vidik_api" {
 
   environment {
     variables = {
-      # Add your environment variables here
-      # DATABASE_URL will be set via GitHub Actions secrets
+      DATABASE_URL = digitalocean_database_cluster.postgres.uri
     }
   }
 
