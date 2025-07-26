@@ -9,7 +9,6 @@ on:
       - main
     paths:
       - api/**
-      - infra/rest-api.tf
       - "!api/**/*.md"
 
 env:
@@ -47,6 +46,8 @@ jobs:
         with:
           context: api
           push: true
+          platforms: linux/amd64
+          provenance: false
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
