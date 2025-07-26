@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "scraper/**"
-      - "!scraper/**/.md"
+      - "!scraper/**/*.md"
       - ".github/workflows/test-scraper.yml"
 
 jobs:
