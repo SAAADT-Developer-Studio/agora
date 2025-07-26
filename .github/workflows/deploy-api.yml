@@ -9,11 +9,12 @@ on:
       - main
     paths:
       - api/**
+      - infra/rest-api.tf
       - "!api/**/*.md"
 
 env:
   DOCKER_IMAGE_NAME: vidik-api
-  DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+  AWS_REGION: eu-central-1
 
 jobs:
   build-and-push:
@@ -22,28 +23,91 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }} # Use a PAT for security
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Docker Image to ECR
         id: docker_build
         uses: docker/build-push-action@v5
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.DOCKER_IMAGE_NAME }}
+          IMAGE_TAG: ${{ github.sha }}
         with:
           context: api
           push: true
           tags: |
-            ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
-          cache-from: type=gha # Cache layers to speed up builds
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Output Image Details
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.DOCKER_IMAGE_NAME }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Image pushed successfully!"
-          echo "Image: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}"
-          echo "Latest: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest"
+          echo "Image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          echo "Latest: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
+
+  # deploy:
+  #   runs-on: ubuntu-latest
+  #   needs: build-and-push
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
+
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
+
+  #     - name: Login to Amazon ECR
+  #       id: login-ecr
+  #       uses: aws-actions/amazon-ecr-login@v2
+
+  #     - name: Update Lambda function with new image
+  #       env:
+  #         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+  #         ECR_REPOSITORY: ${{ env.DOCKER_IMAGE_NAME }}
+  #         IMAGE_TAG: ${{ github.sha }}
+  #       run: |
+  #         # Update the Lambda function with the new Docker image
+  #         aws lambda update-function-code \
+  #           --function-name vidik-api \
+  #           --image-uri ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+  #         # Wait for the update to complete
+  #         aws lambda wait function-updated \
+  #           --function-name vidik-api
+
+  #         # Update environment variables if needed
+  #         aws lambda update-function-configuration \
+  #           --function-name vidik-api \
+  #           --environment Variables="{DATABASE_URL=${{ secrets.DATABASE_URL }}}"
+
+  #     - name: Test Lambda function
+  #       run: |
+  #         # Get the function URL
+  #         FUNCTION_URL=$(aws lambda get-function-url-config --function-name vidik-api --query 'FunctionUrl' --output text)
+  #         echo "Testing Lambda function at: $FUNCTION_URL"
+
+  #         # Test the health endpoint
+  #         curl -f "$FUNCTION_URL/health" || exit 1
+  #         echo "Lambda function is healthy!"
