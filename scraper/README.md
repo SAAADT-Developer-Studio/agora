@@ -22,7 +22,7 @@ uv run python3 -m app.main
 
 ```bash
 # limit to certain providers
-uv run python3 -m app.main -providers=rtv,delo
+uv run python3 -m app.main --providers=rtv,delo
 ```
 
 ## Testing
