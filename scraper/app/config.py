@@ -1,7 +1,5 @@
 import os
 import dotenv
-from dataclasses import dataclass
-from typing import List
 
 dotenv.load_dotenv()
 
@@ -24,22 +22,3 @@ TIME_WINDOW = {
 APP_ENV = ensure_env_var("APP_ENV")
 GOOGLE_API_KEY = ensure_env_var("GOOGLE_API_KEY")
 DATABASE_URL = ensure_env_var("DATABASE_URL")
-
-
-@dataclass
-class Category:
-    name: str
-    key: str
-
-
-CATEGORIES: List[Category] = [
-    Category(name="POLITIKA", key="politika"),
-    Category(name="GOSPODARSTVO", key="gospodarstvo"),
-    Category(name="KRIMINAL", key="kriminal"),
-    Category(name="ŠPORT", key="sport"),
-    Category(name="KULTURA", key="kultura"),
-    Category(name="ZDRAVJE", key="zdravje"),
-    Category(name="OKOLJE", key="okolje"),
-    Category(name="LOKALNO", key="lokalno"),
-    Category(name="TEHNOLOGIJA & ZNANOST", key="tehnologija-znanost"),
-]
