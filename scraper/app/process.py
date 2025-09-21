@@ -5,7 +5,6 @@ from langchain_core.embeddings import Embeddings
 from langchain.chat_models import init_chat_model
 from pprint import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
-from pydantic import BaseModel, Field
 
 from app.extractor.extractor import Extractor, ExtractedArticle
 from app.database.schema import Article
@@ -15,7 +14,6 @@ from app.feeds.fetch_articles import fetch_articles
 from app.utils.concurrency import run_concurrently_with_limit
 from app.providers.news_provider import ArticleMetadata
 from app.clusterer.cluster import run_clustering
-from app import config
 
 
 async def process(
@@ -53,19 +51,15 @@ async def process(
         )
 
         # TODO: errors
-        summaries_and_categories = await summarize_and_categorize_articles(
-            new_article_metadatas, extracted_articles
-        )
+        summaries = await generate_summaries(new_article_metadatas, extracted_articles)
 
-        articles_embeddings = await generate_embeddings(
-            extracted_articles, summaries_and_categories, embeddings
-        )
+        articles_embeddings = await generate_embeddings(extracted_articles, summaries, embeddings)
 
         articles: list[Article] = []
         for article_metadata, extracted_article, summary, embedding in zip(
             new_article_metadatas,
             extracted_articles,
-            summaries_and_categories,
+            summaries,
             articles_embeddings,
         ):
             article = Article(
@@ -74,12 +68,11 @@ async def process(
                 author=extracted_article.author,
                 deck=extracted_article.deck,
                 content=extracted_article.content,
-                summary=summary.summary,
+                summary=summary,
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
                 image_urls=article_metadata.image_urls,
-                categories=summary.categories[:3],
             )
             pprint(article)
             articles.append(article)
@@ -120,21 +113,10 @@ def join_articles(
     return metadatas, extracted_articles
 
 
-class ResponseFormatter(BaseModel):
-    """Always use this tool to structure your response to the user."""
-
-    summary: str = Field(description="The summary of the article in Slovenian")
-    categories: list[str] = Field(
-        description="At most 3 applicable categories from the predefined list"
-    )
-
-
-async def summarize_and_categorize_articles(
+async def generate_summaries(
     article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle]
-) -> list[ResponseFormatter]:
-    base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
-    model = base_model.bind_tools([ResponseFormatter])
-
+) -> list[str]:
+    model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     inputs = []
     for article_metadata, extracted_article in zip(article_metadatas, extracted_articles):
         summary = f"Summary: {article_metadata.summary}" if article_metadata.summary else ""
@@ -143,8 +125,6 @@ async def summarize_and_categorize_articles(
         prompt = (
             "You are a professional Slovenian journalist.\n"
             "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
-            "Then, categorize the article into at most 3 categories from this predefined list. Order them by relevance. \n"
-            f"{", ".join(category.key for category in config.CATEGORIES)} \n"
             f"Title: {article_metadata.title}\n"
             f"{summary}\n"
             f"{deck}\n"
@@ -152,15 +132,12 @@ async def summarize_and_categorize_articles(
         )
         inputs.append(prompt)
     results = await model.abatch(inputs=inputs)
-    return [ResponseFormatter.model_validate(result.tool_calls[0]["args"]) for result in results]
-    # return [result.content for result in results]
+    return [result.content for result in results]
 
 
 async def generate_embeddings(
-    articles: list[ExtractedArticle], summaries: list[ResponseFormatter], embeddings: Embeddings
+    articles: list[ExtractedArticle], summaries: list[str], embeddings: Embeddings
 ) -> list[list[float]]:
-    documents = [
-        f"{article.title}\n{summary.summary}" for article, summary in zip(articles, summaries)
-    ]
+    documents = [f"{article.title}\n{summary}" for article, summary in zip(articles, summaries)]
     article_embeddings = await embeddings.aembed_documents(documents)
     return article_embeddings
