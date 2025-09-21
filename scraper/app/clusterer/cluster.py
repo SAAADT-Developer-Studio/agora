@@ -5,6 +5,7 @@ import pandas as pd
 from umap import UMAP
 from pprint import pprint
 from sklearn.preprocessing import Normalizer
+from langchain.chat_models import init_chat_model
 from typing import Iterable
 import logging
 import json
@@ -40,8 +41,16 @@ def hash_cluster(articles: list[Article]) -> int:
 
 
 async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -> list[str]:
-    # titles = await llm.abatch()
-    return [articles[0].title for articles in article_lists]
+    model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
+    inputs = [
+        "Generate a concise and descriptive collective title for the following news article titles. Write it in slovenian, output only the title.\n\n"
+        + "\n".join(article.title for article in articles[:5])
+        for articles in article_lists
+    ]
+    results = await model.abatch(inputs=inputs)
+    titles = [result.content for result in results]
+    return titles
+    # return [articles[0].title for articles in article_lists]
 
 
 async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
