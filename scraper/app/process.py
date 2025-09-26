@@ -62,7 +62,7 @@ async def process(
         )
 
         articles: list[Article] = []
-        for article_metadata, extracted_article, summary, embedding in zip(
+        for article_metadata, extracted_article, article_analysis, embedding in zip(
             new_article_metadatas,
             extracted_articles,
             summaries_and_categories,
@@ -74,12 +74,12 @@ async def process(
                 author=extracted_article.author,
                 deck=extracted_article.deck,
                 content=extracted_article.content,
-                summary=summary.summary,
+                summary=article_analysis.summary,
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
                 image_urls=article_metadata.image_urls,
-                categories=summary.categories[:3],
+                categories=article_analysis.categories[:3],
             )
             pprint(article)
             articles.append(article)
@@ -120,7 +120,7 @@ def join_articles(
     return metadatas, extracted_articles
 
 
-class ResponseFormatter(BaseModel):
+class ArticleAnalysis(BaseModel):
     """Always use this tool to structure your response to the user."""
 
     summary: str = Field(description="The summary of the article in Slovenian")
@@ -131,9 +131,9 @@ class ResponseFormatter(BaseModel):
 
 async def summarize_and_categorize_articles(
     article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle]
-) -> list[ResponseFormatter]:
+) -> list[ArticleAnalysis]:
     base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
-    model = base_model.bind_tools([ResponseFormatter])
+    model = base_model.with_structured_output(ArticleAnalysis)
 
     inputs = []
     for article_metadata, extracted_article in zip(article_metadatas, extracted_articles):
@@ -152,12 +152,11 @@ async def summarize_and_categorize_articles(
         )
         inputs.append(prompt)
     results = await model.abatch(inputs=inputs)
-    return [ResponseFormatter.model_validate(result.tool_calls[0]["args"]) for result in results]
-    # return [result.content for result in results]
+    return results
 
 
 async def generate_embeddings(
-    articles: list[ExtractedArticle], summaries: list[ResponseFormatter], embeddings: Embeddings
+    articles: list[ExtractedArticle], summaries: list[ArticleAnalysis], embeddings: Embeddings
 ) -> list[list[float]]:
     documents = [
         f"{article.title}\n{summary.summary}" for article, summary in zip(articles, summaries)
