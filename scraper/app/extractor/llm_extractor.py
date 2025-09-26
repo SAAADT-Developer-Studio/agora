@@ -2,7 +2,6 @@ import os
 import os
 import getpass
 from langchain.chat_models import init_chat_model
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from pydantic import BaseModel, Field
 from app.extractor.extractor import ExtractedArticle, Extractor
 
@@ -17,13 +16,8 @@ class ArticleStructuredOutput(BaseModel):
     author: str = Field(description="Author of the article")
     deck: str = Field(description="Deck of the article, a summary or brief description")
     content: str = Field(description="Full content of the article")
-    num_comments: int = Field(
-        description="Number of comments on the article", default=0
-    )
+    num_comments: int = Field(description="Number of comments on the article", default=0)
     is_error: bool = False
-
-
-# set_debug(True)
 
 
 class LlmExtractor(Extractor):
@@ -64,7 +58,7 @@ class LlmExtractor(Extractor):
         )
 
     def generate_markdown(self, html: str) -> str:
-        # return html2text.html2text(html=html)
-        markdown_generator = DefaultMarkdownGenerator()
-        result = markdown_generator.generate_markdown(cleaned_html=html)
-        return result.raw_markdown
+        return html2text.html2text(html=html)
+        # markdown_generator = DefaultMarkdownGenerator()
+        # result = markdown_generator.generate_markdown(cleaned_html=html)
+        # return result.raw_markdown
