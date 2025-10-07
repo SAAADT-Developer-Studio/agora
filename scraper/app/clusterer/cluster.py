@@ -43,8 +43,13 @@ def hash_cluster(articles: list[Article]) -> int:
 async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -> list[str]:
     model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     inputs = [
-        "Generate a concise and descriptive collective title for the following news article titles. Write it in slovenian, output only the title.\n\n"
-        + "\n".join(article.title for article in articles[:5])
+        "You are a professional Slovenian news editor. "
+        + "Generate a descriptive and engaging collective title for the following news article titles. "
+        + "Write it in slovenian, output only the title.\n\n"
+        + "\n".join(
+            article.title
+            for article in sorted(articles[:5], key=lambda a: a.published_at, reverse=True)
+        )
         for articles in article_lists
     ]
     results = await model.abatch(inputs=inputs)
@@ -96,7 +101,6 @@ async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
 
     clusters_to_add = list(set(clusters.keys()) - unchanged_cluster_labels)
 
-    # TODO: use LLM to generate titles for new clusters
     titles: list[str] = await generate_titles_for_clusters(
         clusters[label] for label in clusters_to_add
     )
