@@ -77,6 +77,7 @@ class Cluster(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
     title: Mapped[str] = mapped_column(String)
+    # categories: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
 
     articles: Mapped[List["Article"]] = relationship(
         "Article", back_populates="cluster", passive_deletes=True, init=False

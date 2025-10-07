@@ -145,6 +145,7 @@ async def summarize_and_categorize_articles(
             "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
             "Then, categorize the article into at most 3 categories from this predefined list. Order them by relevance. \n"
             f"{", ".join(category.key for category in config.CATEGORIES)} \n"
+            f"Use only the provided categories, do not make up new ones.\n"
             f"Title: {article_metadata.title}\n"
             f"{summary}\n"
             f"{deck}\n"
