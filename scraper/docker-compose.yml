@@ -1,0 +1,32 @@
+services:
+  scraper:
+    build: .
+    environment:
+      APP_ENV: ${APP_ENV}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+  # TODO: refactor ansible script
+  # https://medium.com/@yellalena/send-node-js-logs-from-docker-to-grafana-cloud-with-alloy-d33c51acf60b
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    ports:
+      - "12345:12345"
+    volumes:
+      # mount config file
+      - "./config.alloy:/etc/alloy/config.alloy"
+      # give access to running docker containers for discovery.docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # give access to docker's log files directory (optional)
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    environment:
+      # pass environment variables for config.alloy
+      GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
+      GRAFANA_LOKI_USERNAME: ${GRAFANA_LOKI_USERNAME}
+      GRAFANA_CLOUD_API_KEY: ${GRAFANA_CLOUD_API_KEY}
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy

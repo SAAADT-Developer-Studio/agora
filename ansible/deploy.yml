@@ -1,4 +1,5 @@
-# ansible/deploy.yml
+# TODO: refactor this to use docker-compose.yml
+# deploy should only restart the scraper service
 ---
 - name: Deploy Docker image to Hetzner VM
   hosts: hetzner_vms
