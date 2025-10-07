@@ -53,19 +53,17 @@ async def process(
         )
 
         # TODO: errors
-        summaries_and_categories = await summarize_and_categorize_articles(
-            new_article_metadatas, extracted_articles
-        )
+        article_analyses = await analyze_articles(new_article_metadatas, extracted_articles)
 
         articles_embeddings = await generate_embeddings(
-            extracted_articles, summaries_and_categories, embeddings
+            extracted_articles, article_analyses, embeddings
         )
 
         articles: list[Article] = []
         for article_metadata, extracted_article, article_analysis, embedding in zip(
             new_article_metadatas,
             extracted_articles,
-            summaries_and_categories,
+            article_analyses,
             articles_embeddings,
         ):
             article = Article(
@@ -75,6 +73,7 @@ async def process(
                 deck=extracted_article.deck,
                 content=extracted_article.content,
                 summary=article_analysis.summary,
+                llm_rank=article_analysis.rank,
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
@@ -124,12 +123,13 @@ class ArticleAnalysis(BaseModel):
     """Always use this tool to structure your response to the user."""
 
     summary: str = Field(description="The summary of the article in Slovenian")
+    rank: int = Field(description="The importance rank of the article from 1 to 10")
     categories: list[str] = Field(
         description="At most 3 applicable categories from the predefined list"
     )
 
 
-async def summarize_and_categorize_articles(
+async def analyze_articles(
     article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle]
 ) -> list[ArticleAnalysis]:
     base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
@@ -144,12 +144,14 @@ async def summarize_and_categorize_articles(
             "You are a professional Slovenian journalist.\n"
             "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
             "Then, categorize the article into at most 3 categories from this predefined list. Order them by relevance. \n"
+            "Also provide a rank from 1 to 10 for the article, based on the significance of its content to a Slovenian, who is interested in politics, economics or crime.\n",
+            "Rank superflous content, like the horoscopes lower, and more important content, like controversial politics, crime, economics or anything with money higher.\n",
             f"{", ".join(category.key for category in config.CATEGORIES)} \n"
             f"Use only the provided categories, do not make up new ones.\n"
             f"Title: {article_metadata.title}\n"
             f"{summary}\n"
             f"{deck}\n"
-            f"{content}"
+            f"{content}",
         )
         inputs.append(prompt)
     results = await model.abatch(inputs=inputs)

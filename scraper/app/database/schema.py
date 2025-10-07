@@ -39,6 +39,7 @@ class Article(Base):
     embedding: Mapped[List[float]] = mapped_column(ARRAY(Float))
     image_urls: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
     categories: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
+    llm_rank: Mapped[Optional[int]] = mapped_column(Integer)
 
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
     news_provider: Mapped["NewsProvider"] = relationship(
