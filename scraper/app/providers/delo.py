@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class DeloProvider(NewsProvider):
@@ -9,4 +9,5 @@ class DeloProvider(NewsProvider):
             name="Delo",
             url="https://www.delo.si",
             rss_feeds=["https://www.delo.si/rss"],
+            bias_rating=BiasRating.LEFT.value,
         )

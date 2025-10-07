@@ -65,3 +65,4 @@ class NewsProviderService:
                         provider.name = provider_data.name
                         provider.url = provider_data.url
                         provider.rank = provider_data.rank
+                        provider.bias_rating = provider_data.bias_rating

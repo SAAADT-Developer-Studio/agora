@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class ReporterProvider(NewsProvider):
@@ -9,4 +9,5 @@ class ReporterProvider(NewsProvider):
             name="Reporter",
             url="https://reporter.si",
             rss_feeds=["https://reporter.si/rss/site.xml"],
+            bias_rating=BiasRating.RIGHT.value,
         )

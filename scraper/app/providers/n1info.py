@@ -4,7 +4,7 @@ import httpx
 
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class N1InfoProvider(NewsProvider):
@@ -14,6 +14,7 @@ class N1InfoProvider(NewsProvider):
             name="N1 Info",
             url="https://n1info.si",
             rss_feeds=["https://n1info.si/feed"],
+            bias_rating=BiasRating.CENTER.value,
         )
 
     # async def fetch_articles(self) -> list[ArticleMetadata]:

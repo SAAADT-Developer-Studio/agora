@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class MladinaProvider(NewsProvider):
@@ -11,4 +11,5 @@ class MladinaProvider(NewsProvider):
             rss_feeds=["https://feeds.feedburner.com/Mladina"],
             # Thu, 3 Jul 2025 22:00:00 GMT
             rss_date_format="%a, %d %b %Y %H:%M:%S %Z",
+            bias_rating=BiasRating.LEFT.value,
         )

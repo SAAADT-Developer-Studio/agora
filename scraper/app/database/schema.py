@@ -64,6 +64,7 @@ class NewsProvider(Base):
     name: Mapped[str] = mapped_column(String, unique=True)
     url: Mapped[str] = mapped_column(String, unique=True)
     rank: Mapped[int] = mapped_column(Integer)
+    bias_rating: Mapped[Optional[str]] = mapped_column(String)
 
     articles: Mapped[List["Article"]] = relationship(
         "Article", back_populates="news_provider", init=False

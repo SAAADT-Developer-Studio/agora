@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 from datetime import datetime
 import xmltodict
@@ -15,6 +15,7 @@ class Nova24TVProvider(NewsProvider):
             name="Nova24TV",
             url="https://nova24tv.si",
             rss_feeds=["https://nova24tv.si/feed"],
+            bias_rating=BiasRating.RIGHT.value,
         )
 
     # async def fetch_articles(self) -> list[ArticleMetadata]:

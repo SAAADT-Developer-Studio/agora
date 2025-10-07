@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class DnevnikProvider(NewsProvider):
@@ -9,4 +9,5 @@ class DnevnikProvider(NewsProvider):
             name="Dnevnik",
             url="https://www.dnevnik.si",
             rss_feeds=["https://www.dnevnik.si/rss.xml"],
+            bias_rating=BiasRating.LEFT.value,
         )

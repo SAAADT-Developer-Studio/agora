@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class VecerProvider(NewsProvider):
@@ -12,6 +12,7 @@ class VecerProvider(NewsProvider):
             name="Večer",
             url="https://vecer.com",
             rss_feeds=["https://feeds.feedburner.com/vecer"],
+            bias_rating=BiasRating.LEFT.value,
         )
 
     # async def fetch_articles(self) -> list[ArticleMetadata]:
