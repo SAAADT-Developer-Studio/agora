@@ -26,3 +26,14 @@ class ProviderKey(Enum):
     BLOOMBERGADRIA = "bloombergadria"
     INFO360 = "info360"
     LOKALEC = "lokalec"
+
+
+# bias ratings are based on the following research:
+# https://www.frontiersin.org/journals/communication/articles/10.3389/fcomm.2023.1143786/full
+# https://www.eecs.qmul.ac.uk/~mpurver/papers/caporusso-et-al24jadt-politics.pdf
+class BiasRating(Enum):
+    LEFT = "left"
+    CENTER_LEFT = "center-left"
+    CENTER = "center"
+    CENTER_RIGHT = "center-right"
+    RIGHT = "right"

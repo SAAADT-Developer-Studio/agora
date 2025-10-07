@@ -6,7 +6,7 @@ import itertools
 from app import config
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class _24URProvider(NewsProvider):
@@ -16,6 +16,7 @@ class _24URProvider(NewsProvider):
             name="24ur",
             url="https://www.24ur.com",
             rss_feeds=["https://www.24ur.com/rss"],
+            bias_rating=BiasRating.CENTER_LEFT.value,
         )
 
     # async def fetch_articles(self) -> list[ArticleMetadata]:

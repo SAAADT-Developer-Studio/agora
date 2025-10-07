@@ -1,4 +1,4 @@
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey
 import os
 import boto3
 

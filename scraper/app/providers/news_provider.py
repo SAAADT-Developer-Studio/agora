@@ -30,6 +30,7 @@ class NewsProvider(ABC):
         rss_feeds: list[str],
         rss_date_format: str = "%a, %d %b %Y %H:%M:%S %z",
         rank: int = 0,
+        bias_rating: Optional[str] = None,
     ):
         self.key = key
         self.name = name
@@ -37,6 +38,7 @@ class NewsProvider(ABC):
         self.rss_feeds = rss_feeds
         self.rss_date_format = rss_date_format
         self.rank = rank
+        self.bias_rating = bias_rating
 
     async def fetch_articles(self) -> list[ArticleMetadata]:
         """

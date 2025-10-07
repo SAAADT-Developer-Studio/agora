@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class RTVProvider(NewsProvider):
@@ -9,4 +9,5 @@ class RTVProvider(NewsProvider):
             name="RTV",
             url="https://www.rtvslo.si",
             rss_feeds=["https://img.rtvslo.si/feeds/00.xml"],
+            bias_rating=BiasRating.CENTER_LEFT.value,
         )

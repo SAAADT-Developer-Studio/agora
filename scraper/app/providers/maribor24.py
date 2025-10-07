@@ -5,7 +5,7 @@ from datetime import datetime
 import itertools
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey
 
 
 class Maribor24Provider(NewsProvider):

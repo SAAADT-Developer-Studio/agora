@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class Info360Provider(NewsProvider):
@@ -9,4 +9,5 @@ class Info360Provider(NewsProvider):
             name="Info360",
             url="https://info360.si/",
             rss_feeds=["https://info360.si/rss.xml"],
+            bias_rating=BiasRating.CENTER_RIGHT.value,
         )
