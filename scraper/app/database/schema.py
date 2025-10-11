@@ -39,7 +39,7 @@ class Article(Base):
     embedding: Mapped[List[float]] = mapped_column(ARRAY(Float))
     image_urls: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
     categories: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
-    llm_rank: Mapped[Optional[int]] = mapped_column(Integer)
+    llm_rank: Mapped[Optional[int]] = mapped_column(Integer)  # TODO: make this non-nullable later
 
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
     news_provider: Mapped["NewsProvider"] = relationship(
@@ -71,7 +71,7 @@ class NewsProvider(Base):
     )
 
     def __repr__(self):
-        return f"<NewsProvider(key={self.key}, name={self.name}, url={self.url})>"
+        return f"<NewsProvider(key={self.key}, name={self.name}, url={self.url}, rank={self.rank})>"
 
 
 class Cluster(Base):
@@ -79,14 +79,14 @@ class Cluster(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
     title: Mapped[str] = mapped_column(String)
-    # categories: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
+    slug: Mapped[Optional[str]] = mapped_column(String, unique=True)
 
     articles: Mapped[List["Article"]] = relationship(
         "Article", back_populates="cluster", passive_deletes=True, init=False
     )
 
     def __repr__(self):
-        return f"<Cluster(id={self.id}, title={self.title})>"
+        return f"<Cluster(id={self.id}, title={self.title}, slug={self.slug})>"
 
 
 engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)

@@ -12,6 +12,8 @@ import json
 
 from app.database.unit_of_work import database_session, UnitOfWork
 from app.database.schema import Article, Cluster
+from app.utils.slugify import slugify
+from datetime import datetime
 
 
 def cluster(embeddings: list[np.ndarray]) -> list[int]:
@@ -45,7 +47,7 @@ async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -
     inputs = [
         "You are a professional Slovenian news editor. "
         + "Generate a descriptive and engaging collective title for the following news article titles. "
-        + "Write it in slovenian, output only the title.\n\n"
+        + "Write it in slovenian, output only a single title, don't include any other text or try to output markdown.\n\n"
         + "\n".join(
             article.title
             for article in sorted(articles[:5], key=lambda a: a.published_at, reverse=True)
@@ -105,7 +107,10 @@ async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
         clusters[label] for label in clusters_to_add
     )
 
-    clusters_to_create: list[Cluster] = [Cluster(title=title) for title in titles]
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    clusters_to_create: list[Cluster] = [
+        Cluster(title=title, slug=f"{slugify(title)}-{date_str}") for title in titles
+    ]
 
     cluster_articles_count = sum(len(clusters[label]) for label in clusters_to_add)
     unchanged_cluster_articles_count = sum(
