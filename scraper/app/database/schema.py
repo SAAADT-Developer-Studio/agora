@@ -16,9 +16,10 @@ from sqlalchemy.orm import (
     relationship,
     MappedAsDataclass,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
 import app.config as config
 from dataclasses import dataclass
+import uuid
 
 
 class Base(MappedAsDataclass, DeclarativeBase):
@@ -69,6 +70,7 @@ class NewsProvider(Base):
     articles: Mapped[List["Article"]] = relationship(
         "Article", back_populates="news_provider", init=False
     )
+    votes: Mapped[List["Vote"]] = relationship("Vote", back_populates="news_provider", init=False)
 
     def __repr__(self):
         return f"<NewsProvider(key={self.key}, name={self.name}, url={self.url}, rank={self.rank})>"
@@ -87,6 +89,25 @@ class Cluster(Base):
 
     def __repr__(self):
         return f"<Cluster(id={self.id}, title={self.title}, slug={self.slug})>"
+
+
+class Vote(Base):
+    __tablename__ = "vote"
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(
+        String, ForeignKey("news_provider.key"), primary_key=True
+    )
+    value: Mapped[str] = mapped_column(
+        String
+    )  # "left", "center left", "center", "center right", "right"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    news_provider: Mapped["NewsProvider"] = relationship(
+        "NewsProvider", back_populates="votes", init=False
+    )
+
+    def __repr__(self):
+        return f"<Vote(user_id={self.user_id}, provider_id={self.provider_id}, value={self.value})>"
 
 
 engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
