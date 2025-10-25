@@ -5,7 +5,7 @@ from datetime import datetime
 import itertools
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
-from app.providers.enums import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class Maribor24Provider(NewsProvider):
@@ -15,6 +15,7 @@ class Maribor24Provider(NewsProvider):
             name="Maribor24",
             url="https://maribor24.si",
             rss_feeds=["https://maribor24.si/feed"],
+            bias_rating=BiasRating.CENTER_RIGHT.value,
         )
 
     # async def fetch_articles(self) -> list[ArticleMetadata]:

@@ -13,7 +13,7 @@ def process_image_for_web(
     output_folder,
     base_filename,
     size=(60, 60),
-    webp_quality=85,
+    webp_quality=95,
     create_webp=True,
     create_jpeg_fallback=True,
     jpeg_quality=85,
@@ -40,7 +40,8 @@ def process_image_for_web(
 
 
 LOCAL_INPUT_DIR = "data/logos_source"
-LOCAL_OUTPUT_DIR = "data/logos"
+LOCAL_OUTPUT_DIR_60 = "data/logos/60"
+LOCAL_OUTPUT_DIR_160 = "data/logos/160"
 
 for root, _, files in os.walk(LOCAL_INPUT_DIR):
     for filename in files:
@@ -48,13 +49,25 @@ for root, _, files in os.walk(LOCAL_INPUT_DIR):
             input_path = os.path.join(root, filename)
             base_name = os.path.splitext(filename)[0]
 
-        process_image_for_web(
-            image_path=input_path,
-            output_folder=LOCAL_OUTPUT_DIR,
-            base_filename=base_name,
-            create_webp=True,
-            create_jpeg_fallback=False,
-        )
+            # Process 60x60 version
+            process_image_for_web(
+                image_path=input_path,
+                output_folder=LOCAL_OUTPUT_DIR_60,
+                base_filename=base_name,
+                size=(60, 60),
+                create_webp=True,
+                create_jpeg_fallback=False,
+            )
+
+            # Process 160x160 version
+            process_image_for_web(
+                image_path=input_path,
+                output_folder=LOCAL_OUTPUT_DIR_160,
+                base_filename=base_name,
+                size=(160, 160),
+                create_webp=True,
+                create_jpeg_fallback=False,
+            )
 
 R2_ACCOUNT_ID = os.getenv("CLOUDFLARE_R2_ACCOUNT_ID")
 R2_ACCESS_KEY = os.getenv("CLOUDFLARE_R2_ACCESS_KEY_ID")
@@ -92,36 +105,41 @@ for page in paginator.paginate(Bucket=R2_BUCKET, Prefix=PREFIX):
         etag = obj["ETag"].strip('"')
         remote[key] = etag
 
-# 2) Walk local directory and upload if new or changed
-for root, _, files in os.walk(LOCAL_OUTPUT_DIR):
-    for fname in files:
-        local_path = os.path.join(root, fname)
-        rel_path = os.path.relpath(local_path, LOCAL_OUTPUT_DIR)
-        r2_key = PREFIX + rel_path.replace(os.sep, "/")
-        local_md5 = md5sum(local_path)
+# 2) Walk local directories and upload if new or changed
+for size_dir, size_suffix in [(LOCAL_OUTPUT_DIR_60, "60"), (LOCAL_OUTPUT_DIR_160, "160")]:
+    for root, _, files in os.walk(size_dir):
+        for fname in files:
+            local_path = os.path.join(root, fname)
+            rel_path = os.path.relpath(local_path, size_dir)
 
-        if remote.get(r2_key) == local_md5:
-            print(f"Skipping unchanged: {r2_key}")
-            continue
+            # Add size suffix to filename (e.g., provider-60.webp, provider-160.webp)
+            base_name, ext = os.path.splitext(rel_path)
+            r2_key = PREFIX + f"{base_name}-{size_suffix}{ext}".replace(os.sep, "/")
 
-        # determine content type
-        ext = os.path.splitext(fname)[1].lower()
-        ct = {
-            ".webp": "image/webp",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".avif": "image/avif",
-        }.get(ext, "application/octet-stream")
+            local_md5 = md5sum(local_path)
 
-        try:
-            s3.upload_file(
-                local_path,
-                R2_BUCKET,
-                r2_key,
-                ExtraArgs={"ContentType": ct, "CacheControl": "public, max-age=31536000"},
-            )
-            print(f"Uploaded/Updated: {r2_key}")
-        except ClientError as e:
-            print(f"Error uploading {r2_key}: {e}")
+            if remote.get(r2_key) == local_md5:
+                print(f"Skipping unchanged: {r2_key}")
+                continue
+
+            # determine content type
+            ext_lower = os.path.splitext(fname)[1].lower()
+            ct = {
+                ".webp": "image/webp",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".avif": "image/avif",
+            }.get(ext_lower, "application/octet-stream")
+
+            try:
+                s3.upload_file(
+                    local_path,
+                    R2_BUCKET,
+                    r2_key,
+                    ExtraArgs={"ContentType": ct, "CacheControl": "public, max-age=31536000"},
+                )
+                print(f"Uploaded/Updated: {r2_key}")
+            except ClientError as e:
+                print(f"Error uploading {r2_key}: {e}")
 
         # TODO: purge old versions from cdn via cloudflare API
