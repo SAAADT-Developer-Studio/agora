@@ -16,8 +16,8 @@ class ArticleMetadata:
     link: str
     provider_key: str
     image_urls: list[str]
+    title: str
     published_at: datetime = field(default_factory=datetime.now)
-    title: Optional[str] = None
     summary: Optional[str] = None
 
 
