@@ -45,7 +45,9 @@ class NewsProviderService:
 
             # Create new providers
             new_providers = [
-                NewsProvider(name=p.name, key=p.key, url=p.url, rank=p.rank)
+                NewsProvider(
+                    name=p.name, key=p.key, url=p.url, rank=p.rank, bias_rating=p.bias_rating
+                )
                 for p in new_providers_data
             ]
             if new_providers:
