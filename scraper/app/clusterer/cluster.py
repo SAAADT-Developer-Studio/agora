@@ -43,6 +43,7 @@ def hash_cluster(articles: list[Article]) -> int:
 
 
 async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -> list[str]:
+    # TODO: dont generate titles for clusters with only 1 article
     model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     inputs = [
         "You are a professional Slovenian news editor. "
@@ -55,7 +56,15 @@ async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -
         for articles in article_lists
     ]
     results = await model.abatch(inputs=inputs)
-    titles = [result.content for result in results]
+    # langchain returns some weird ass structure
+    titles = [
+        (
+            result.content[0]
+            if isinstance(result.content[0], str)
+            else articles[0].title if isinstance(result.content, list) else result.content
+        )
+        for result, articles in zip(results, article_lists)
+    ]
     return titles
     # return [articles[0].title for articles in article_lists]
 
