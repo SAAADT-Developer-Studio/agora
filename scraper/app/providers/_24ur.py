@@ -26,21 +26,26 @@ class _24URProvider(NewsProvider):
 
     def extract_image_urls(self, entry: dict) -> list[str]:
         image_urls = []
-        description = entry.get("summary", "") or entry.get("description", "")
 
-        if description:
-            # Parse HTML description with BeautifulSoup
-            soup = BeautifulSoup(description, "html.parser")
-            img_tags = soup.find_all("img")
+        try:
+            description = entry.get("summary", "") or entry.get("description", "")
 
-            for img in img_tags:
-                src = img.get("src")
-                if src:
-                    # Replace 213xX with 884xX for higher quality
-                    high_quality_url = src.replace("/213xX/", "/884xX/")
-                    image_urls.append(high_quality_url)
+            if description:
+                # Parse HTML description with BeautifulSoup
+                soup = BeautifulSoup(description, "html.parser")
+                img_tags = soup.find_all("img")
 
-        # Always add default enclosure extraction at the end
-        image_urls.extend(super().extract_image_urls(entry))
+                for img in img_tags:
+                    src = img.get("src")
+                    if src:
+                        # Replace 213xX with 884xX for higher quality
+                        high_quality_url = src.replace("/213xX/", "/884xX/")
+                        image_urls.append(high_quality_url)
+
+            # Always add default enclosure extraction at the end
+            image_urls.extend(super().extract_image_urls(entry))
+        except Exception as e:
+            logging.error(f"Error extracting image URLs for 24ur: {e}")
+            return []
 
         return image_urls
