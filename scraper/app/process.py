@@ -149,6 +149,7 @@ async def analyze_articles(
             f"{", ".join(category.key for category in config.CATEGORIES)} \n"
             f"Use only the provided categories, do not make up new ones.\n"
             f"Title: {article_metadata.title}\n"
+            f"Published at: {article_metadata.published_at}\n"
             f"{summary}\n"
             f"{deck}\n"
             f"{content}",
