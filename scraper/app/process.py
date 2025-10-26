@@ -7,24 +7,25 @@ from pprint import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
 from pydantic import BaseModel, Field
 
-from app.extractor.extractor import Extractor, ExtractedArticle
+from app.providers.news_provider import ExtractedArticle, ArticleMetadata, NewsProvider
+from app.providers.providers import PROVIDERS
 from app.database.schema import Article
 from app.database.unit_of_work import database_session
 from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
 from app.utils.concurrency import run_concurrently_with_limit
-from app.providers.news_provider import ArticleMetadata
 from app.clusterer.cluster import run_clustering
 from app import config
 
 
 async def process(
-    extractor: Extractor,
     providers: list[str] | None,
     embeddings: Embeddings,
 ):
     start_time = time.perf_counter()
     article_metadatas = await fetch_articles(providers)
+
+    providers_map = {provider.key: provider for provider in PROVIDERS}
 
     with database_session() as uow:
         article_urls = [article_metadata.link for article_metadata in article_metadatas]
@@ -39,24 +40,15 @@ async def process(
         logging.info(f"Found {len(new_article_metadatas)} new articles")
 
         tasks = [
-            extract_article(article_metadata.link, extractor)
+            extract_article(article_metadata, providers_map[article_metadata.provider_key])
             for article_metadata in new_article_metadatas
         ]
-        results, _ = await run_concurrently_with_limit(tasks, limit=3)
-        extracted_articles: list[ExtractedArticle] = [
-            result for result in results if isinstance(result, ExtractedArticle)
-        ]
+        extracted_articles, _ = await run_concurrently_with_limit(tasks, limit=3)
 
-        # join metadata and extracted values, to prevent mismatches in case of errors
-        new_article_metadatas, extracted_articles = join_articles(
-            new_article_metadatas, extracted_articles
-        )
-
-        # TODO: errors
         article_analyses = await analyze_articles(new_article_metadatas, extracted_articles)
 
         articles_embeddings = await generate_embeddings(
-            extracted_articles, article_analyses, embeddings
+            new_article_metadatas, article_analyses, embeddings
         )
 
         articles: list[Article] = []
@@ -68,16 +60,17 @@ async def process(
         ):
             article = Article(
                 url=article_metadata.link,
-                title=article_metadata.title or extracted_article.title,
-                author=extracted_article.author,
-                deck=extracted_article.deck,
-                content=extracted_article.content,
+                title=article_metadata.title,
+                author=extracted_article.author if extracted_article else None,
+                deck=extracted_article.deck if extracted_article else None,
+                content=extracted_article.content if extracted_article else None,
                 summary=article_analysis.summary,
                 llm_rank=article_analysis.rank,
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
-                image_urls=article_metadata.image_urls,
+                image_urls=(extracted_article.image_urls if extracted_article else [])
+                + article_metadata.image_urls,
                 categories=article_analysis.categories[:3],
             )
             pprint(article)
@@ -100,23 +93,15 @@ async def process(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=1, min=1, max=10),
 )
-async def extract_article(url: str, extractor: Extractor):
-    logging.info(f"Extracting article: {url}")
+async def extract_article(
+    article_metadata: ArticleMetadata, provider: NewsProvider
+) -> ExtractedArticle | None:
+    logging.info(f"Extracting article: {article_metadata.link}")
     try:
-        return await extractor.extract_article(url)
+        return await provider.extract_article(article_metadata.link)
     except Exception as e:
-        logging.error(f"Error extracting article from {url}: {e}")
-
-
-def join_articles(
-    article_metadatas: list[ArticleMetadata],
-    extracted_articles: list[ExtractedArticle],
-):
-    metadatas: list[ArticleMetadata] = []
-    metadata_map = {meta.link: meta for meta in article_metadatas}
-    for extracted_article in extracted_articles:
-        metadatas.append(metadata_map[extracted_article.url])
-    return metadatas, extracted_articles
+        logging.error(f"Error extracting article from {article_metadata.link}: {e}")
+        return None
 
 
 class ArticleAnalysis(BaseModel):
@@ -130,7 +115,7 @@ class ArticleAnalysis(BaseModel):
 
 
 async def analyze_articles(
-    article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle]
+    article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle | None]
 ) -> list[ArticleAnalysis]:
     base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     model = base_model.with_structured_output(ArticleAnalysis)
@@ -138,8 +123,16 @@ async def analyze_articles(
     inputs = []
     for article_metadata, extracted_article in zip(article_metadatas, extracted_articles):
         summary = f"Summary: {article_metadata.summary}" if article_metadata.summary else ""
-        deck = f"Deck: {extracted_article.deck}" if extracted_article.deck else ""
-        content = f"Content: {extracted_article.content}" if extracted_article.content else ""
+        deck = (
+            f"Deck: {extracted_article.deck}"
+            if extracted_article and extracted_article.deck
+            else ""
+        )
+        content = (
+            f"Content: {extracted_article.content}"
+            if extracted_article and extracted_article.content
+            else ""
+        )
         prompt = (
             "You are a professional Slovenian journalist.\n"
             "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
@@ -149,6 +142,7 @@ async def analyze_articles(
             f"{", ".join(category.key for category in config.CATEGORIES)} \n"
             f"Use only the provided categories, do not make up new ones.\n"
             f"Title: {article_metadata.title}\n"
+            f"Published at: {article_metadata.published_at}\n"
             f"{summary}\n"
             f"{deck}\n"
             f"{content}",
@@ -159,10 +153,13 @@ async def analyze_articles(
 
 
 async def generate_embeddings(
-    articles: list[ExtractedArticle], summaries: list[ArticleAnalysis], embeddings: Embeddings
+    article_metadatas: list[ArticleMetadata],
+    summaries: list[ArticleAnalysis],
+    embeddings: Embeddings,
 ) -> list[list[float]]:
     documents = [
-        f"{article.title}\n{summary.summary}" for article, summary in zip(articles, summaries)
+        f"{article.title}\n{summary.summary}"
+        for article, summary in zip(article_metadatas, summaries)
     ]
     article_embeddings = await embeddings.aembed_documents(documents)
     return article_embeddings

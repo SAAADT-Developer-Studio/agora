@@ -4,8 +4,6 @@ import logging
 import argparse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-from app.extractor.extractor import Extractor
-from app.extractor.readability_extractor import ReadabilityExtractor
 from app.database.services import NewsProviderService
 from app.process import process
 from app.providers.providers import PROVIDERS
@@ -50,11 +48,9 @@ async def main() -> None:
 
 
 async def run(providers: list[str] | None = None) -> asyncio.Task:
-    extractor: Extractor = ReadabilityExtractor()
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
 
     await process(
-        extractor=extractor,
         providers=providers,
         embeddings=embeddings,
     )
