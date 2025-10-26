@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 import logging
+from pydantic import BaseModel, Field
+from readability import parse
 
 
 @dataclass
@@ -17,6 +19,20 @@ class ArticleMetadata:
     published_at: datetime = field(default_factory=datetime.now)
     title: Optional[str] = None
     summary: Optional[str] = None
+
+
+class ExtractedArticle(BaseModel):
+    """Class representing an article with its attributes."""
+
+    url: str = Field(description="URL of the article")
+    title: str = Field(description="Title of the article")
+    author: str | None = Field(description="Author of the article", default=None)
+    deck: str = Field(description="Deck of the article, a summary or brief description")
+    content: str = Field(description="Full content of the article")
+    published_at: str | None = Field(
+        description="Date when the article was published", default=None
+    )
+    image_urls: list[str] = Field(description="List of image URLs in the article", default=[])
 
 
 class NewsProvider(ABC):
@@ -98,3 +114,52 @@ class NewsProvider(ABC):
         if link.startswith("http"):
             return link
         return f"{self.url}{link}"
+
+    async def fetch_article_html(self, url: str) -> str:
+        """
+        Fetch the HTML content of an article.
+
+        Args:
+            url: The URL of the article.
+
+        Returns:
+            The HTML content of the article.
+        """
+        async with httpx.AsyncClient() as client:
+            client.follow_redirects = True
+            # set user agent to avoid cloudflare blocking user agent
+            client.headers["User-Agent"] = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+            )
+
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.text
+
+    def extract_article_from_html(self, html: str, url: str) -> ExtractedArticle:
+        doc = parse(html)
+
+        return ExtractedArticle(
+            title=doc.title,
+            deck=doc.excerpt,
+            content=doc.text_content,
+            author=doc.byline,
+            url=url,
+            published_at=doc.published_time,
+        )
+
+    async def extract_article(self, url: str) -> ExtractedArticle:
+        """
+        Extract the main content from an article URL.
+
+        This default implementation uses the mozilla Readability library.
+        Providers can override this method to implement custom extraction logic.
+
+        Args:
+            url: The URL of the article.
+
+        Returns:
+            The extracted article with title, content, author, etc.
+        """
+        html = await self.fetch_article_html(url)
+        return self.extract_article_from_html(html, url)
