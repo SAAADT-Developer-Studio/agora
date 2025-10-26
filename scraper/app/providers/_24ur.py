@@ -10,9 +10,6 @@ from app import config
 from app.providers.news_provider import NewsProvider, ArticleMetadata
 from app.providers.enums import ProviderKey, BiasRating
 
-# extract better quality image from descriptiom amd replace 213 with 884
-# <description><img src="https://images.24ur.com/media/images/213xX/Oct2025/32e6f6cb52a810504230_63488961.png?v=034b&fop=fp:0.51:0.28" alt="www.24ur.com"/> V No
-
 
 class _24URProvider(NewsProvider):
     def __init__(self):
