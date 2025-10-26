@@ -57,12 +57,6 @@ class NewsProvider(ABC):
         self.bias_rating = bias_rating
 
     async def fetch_articles(self) -> list[ArticleMetadata]:
-        """
-        Fetch articles from the provider's RSS feed.
-
-        Returns:
-            A list of article metadata.
-        """
         articles: list[ArticleMetadata] = []
         async with httpx.AsyncClient() as client:
             for feed_url in self.rss_feeds:
@@ -90,7 +84,7 @@ class NewsProvider(ABC):
         if "published" in entry:
             date = datetime.strptime(entry["published"], self.rss_date_format)
         entry["summary"] = entry.get("summary")
-        image_urls = [enclosure["href"] for enclosure in entry.get("enclosures", [])]
+        image_urls = self.extract_image_urls(entry)
 
         return ArticleMetadata(
             title=entry["title"],
@@ -101,30 +95,15 @@ class NewsProvider(ABC):
             image_urls=image_urls,
         )
 
+    def extract_image_urls(self, entry: dict) -> list[str]:
+        return [enclosure["href"] for enclosure in entry.get("enclosures", [])]
+
     def get_link(self, link: str) -> str:
-        """
-        Get the full link for an article.
-
-        Args:
-            link: The relative or absolute link to the article.
-
-        Returns:
-            The full URL of the article.
-        """
         if link.startswith("http"):
             return link
         return f"{self.url}{link}"
 
     async def fetch_article_html(self, url: str) -> str:
-        """
-        Fetch the HTML content of an article.
-
-        Args:
-            url: The URL of the article.
-
-        Returns:
-            The HTML content of the article.
-        """
         async with httpx.AsyncClient() as client:
             client.follow_redirects = True
             # set user agent to avoid cloudflare blocking user agent
@@ -149,17 +128,5 @@ class NewsProvider(ABC):
         )
 
     async def extract_article(self, url: str) -> ExtractedArticle:
-        """
-        Extract the main content from an article URL.
-
-        This default implementation uses the mozilla Readability library.
-        Providers can override this method to implement custom extraction logic.
-
-        Args:
-            url: The URL of the article.
-
-        Returns:
-            The extracted article with title, content, author, etc.
-        """
         html = await self.fetch_article_html(url)
         return self.extract_article_from_html(html, url)

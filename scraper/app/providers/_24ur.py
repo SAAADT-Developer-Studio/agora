@@ -1,12 +1,17 @@
+import logging
 import xmltodict
 import httpx
 import asyncio
 from datetime import datetime, timedelta
 import itertools
+from bs4 import BeautifulSoup
 from app import config
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
 from app.providers.enums import ProviderKey, BiasRating
+
+# extract better quality image from descriptiom amd replace 213 with 884
+# <description><img src="https://images.24ur.com/media/images/213xX/Oct2025/32e6f6cb52a810504230_63488961.png?v=034b&fop=fp:0.51:0.28" alt="www.24ur.com"/> V No
 
 
 class _24URProvider(NewsProvider):
@@ -19,35 +24,23 @@ class _24URProvider(NewsProvider):
             bias_rating=BiasRating.CENTER_LEFT.value,
         )
 
-    # async def fetch_articles(self) -> list[ArticleMetadata]:
-    #     async with httpx.AsyncClient() as client:
-    #         response = await client.get("https://www.24ur.com/sitemaps/sites/1")
-    #         document = xmltodict.parse(response.text)
-    #         second_last_page, last_page = document["sitemapindex"]["sitemap"][-2:]
+    def extract_image_urls(self, entry: dict) -> list[str]:
+        image_urls = []
+        description = entry.get("summary", "") or entry.get("description", "")
 
-    #         results = await asyncio.gather(
-    #             self.fetch_page_articles(last_page["loc"]),
-    #             self.fetch_page_articles(second_last_page["loc"]),
-    #         )
-    #         urls = list(itertools.chain(*results))
-    #         return urls
+        if description:
+            # Parse HTML description with BeautifulSoup
+            soup = BeautifulSoup(description, "html.parser")
+            img_tags = soup.find_all("img")
 
-    # async def fetch_page_articles(self, url: str) -> list[ArticleMetadata]:
-    #     async with httpx.AsyncClient() as client:
-    #         response = await client.get(url)
-    #         document = xmltodict.parse(response.text)
-    #         articles = document["urlset"]["url"]
-    #         urls = []
-    #         for article in articles:
-    #             url = article["loc"]
-    #             last_mod = datetime.fromisoformat(article["lastmod"])
-    #             if last_mod > datetime.now(last_mod.tzinfo) - timedelta(
-    #                 **config.TIME_WINDOW
-    #             ):
-    #                 urls.append(
-    #                     ArticleMetadata(
-    #                         link=url,
-    #                         published_at=last_mod,
-    #                     )
-    #                 )
-    #         return urls
+            for img in img_tags:
+                src = img.get("src")
+                if src:
+                    # Replace 213xX with 884xX for higher quality
+                    high_quality_url = src.replace("/213xX/", "/884xX/")
+                    image_urls.append(high_quality_url)
+
+        # Always add default enclosure extraction at the end
+        image_urls.extend(super().extract_image_urls(entry))
+
+        return image_urls
