@@ -24,7 +24,7 @@ class _24URProvider(NewsProvider):
             bias_rating=BiasRating.CENTER_LEFT.value,
         )
 
-    def extract_image_urls(self, entry: dict) -> list[str]:
+    def parse_rss_entry_image_urls(self, entry: dict) -> list[str]:
         image_urls = []
 
         try:
@@ -43,7 +43,7 @@ class _24URProvider(NewsProvider):
                         image_urls.append(high_quality_url)
 
             # Always add default enclosure extraction at the end
-            image_urls.extend(super().extract_image_urls(entry))
+            image_urls.extend(super().parse_rss_entry_image_urls(entry))
         except Exception as e:
             logging.error(f"Error extracting image URLs for 24ur: {e}")
             return []

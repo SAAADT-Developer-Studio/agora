@@ -3,8 +3,10 @@ import httpx
 import asyncio
 from datetime import datetime
 import itertools
+from bs4 import BeautifulSoup
+import logging
 
-from app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.news_provider import NewsProvider, ArticleMetadata, ExtractedArticle
 from app.providers.enums import ProviderKey, BiasRating
 
 
@@ -18,33 +20,28 @@ class Maribor24Provider(NewsProvider):
             bias_rating=BiasRating.CENTER_RIGHT.value,
         )
 
-    # async def fetch_articles(self) -> list[ArticleMetadata]:
-    #     async with httpx.AsyncClient() as client:
-    #         response = await client.get(f"{self.url}/sitemap.xml")
-    #         document = xmltodict.parse(response.text)
-    #         sitemaps = [
-    #             sitemap["loc"]
-    #             for sitemap in document["sitemapindex"]["sitemap"]
-    #             if sitemap["loc"].startswith("https://maribor24.si/sitemap-articles")
-    #         ]
+    async def extract_article(self, url: str) -> ExtractedArticle:
+        html = await self.fetch_article_html(url)
+        extracted_article = self.extract_article_from_html(html, url)
 
-    #         second_last_page, last_page = sitemaps[-2:]
-    #         results = await asyncio.gather(
-    #             self.fetch_page_articles(last_page),
-    #             self.fetch_page_articles(second_last_page),
-    #         )
-    #         urls = list(itertools.chain(*results))
-    #         return urls
+        try:
+            extracted_article.image_urls = self.extract_image_urls(html)
+        except Exception as e:
+            logging.error(f"Error extracting images from {url}: {e}")
 
-    # @staticmethod
-    # async def fetch_page_articles(url: str) -> list[ArticleMetadata]:
-    #     async with httpx.AsyncClient() as client:
-    #         response = await client.get(url)
-    #         document = xmltodict.parse(response.text)
-    #         articles = document["urlset"]["url"]
-    #         urls = []
-    #         for article in articles:
-    #             url = article["loc"]
-    #             last_mod = datetime.fromisoformat(article["lastmod"])
-    #             urls.append(url)
-    #         return urls
+        return extracted_article
+
+    def extract_image_urls(self, html: str) -> list[str]:
+        soup = BeautifulSoup(html, "html.parser")
+        image_urls: list[str] = []
+
+        # Find the main article image
+        article_picture = soup.select_one("picture.article-main-img")
+        if article_picture:
+            img = article_picture.select_one("img")
+            if img:
+                src = img.get("src")
+                if src and isinstance(src, str):
+                    image_urls.append(src)
+
+        return image_urls
