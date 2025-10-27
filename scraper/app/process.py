@@ -154,12 +154,12 @@ async def analyze_articles(
 
 async def generate_embeddings(
     article_metadatas: list[ArticleMetadata],
-    summaries: list[ArticleAnalysis],
+    analyses: list[ArticleAnalysis],
     embeddings: Embeddings,
 ) -> list[list[float]]:
     documents = [
-        f"{article.title}\n{summary.summary}"
-        for article, summary in zip(article_metadatas, summaries)
+        f"{article.title}\n{analysis.summary}"
+        for article, analysis in zip(article_metadatas, analyses)
     ]
     article_embeddings = await embeddings.aembed_documents(documents)
     return article_embeddings
