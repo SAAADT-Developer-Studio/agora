@@ -48,7 +48,6 @@ News providers TODO:
 - [ ] [gorenjski glas](https://www.gorenjskiglas.si)
 - [ ] [ekipa24](https://ekipa.svet24.si)
 - [ ] [moja-dolenjska](https://moja-dolenjska.si/)
-- [ ] [domovina](https://www.domovina.je/)
 - [ ] [casnik](https://casnik.si)
 - [ ] [pozareport](https://pozareport.si)
 - [ ] [primorski dnevnik](https://www.primorski.eu)
@@ -93,7 +92,7 @@ from app.providers.news_provider import NewsProvider
 class DeloProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="delo",  # Unique key for the provider, used in the command line to run with specific providers
+            key=ProviderKey.DELO.value,  # Unique key for the provider, used in the command line to run with specific providers
             name="Delo",  # Display name of the provider
             url="https://www.delo.si",  # Base URL of the website
             rss_feeds=["https://www.delo.si/rss"],  # List of RSS feed URLs
@@ -109,6 +108,10 @@ class DeloProvider(NewsProvider):
 ### 4. Assign a rank to the provider in [ranks.py](/scraper/app/providers/ranks.py)
 
 ### 5. Find the provider logo, resize if needed to get 1x1 aspect ratio.
+
+You can usually find it in the site manifest in the <head> tag.
+
+<link rel="manifest" href="https://www.domovina.je/assets/site.webmanifest">
 
 ```bash
 # Store logo  in /data/logos_source and run
