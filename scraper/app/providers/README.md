@@ -24,6 +24,7 @@ News providers TODO:
 - [x] [demokracija](https://demokracija.si/) https://demokracija.si/
 - [x] [info360](https://info360.si/) https://info360.si//rss.xml
 - [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
+- [x] [domovina](https://www.domovina.je/) https://www.domovina.je/feed
 - [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [nadlani](nadlani.si) https://www.nadlani.si/feed/
 - [ ] [sobota info](https://sobotainfo.com/novice)
