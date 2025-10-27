@@ -26,6 +26,7 @@ class ProviderKey(Enum):
     BLOOMBERGADRIA = "bloombergadria"
     INFO360 = "info360"
     LOKALEC = "lokalec"
+    DOMOVINA = "domovina"
 
 
 # bias ratings are based on the following research:
