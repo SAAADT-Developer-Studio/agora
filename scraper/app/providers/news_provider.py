@@ -84,7 +84,11 @@ class NewsProvider(ABC):
         if "published" in entry:
             date = datetime.strptime(entry["published"], self.rss_date_format)
         entry["summary"] = entry.get("summary")
-        image_urls = self.parse_rss_entry_image_urls(entry)
+        image_urls = []
+        try:
+            image_urls = self.parse_rss_entry_image_urls(entry)
+        except Exception as e:
+            logging.error(f"Error extracting image URLs for {self.name}: {e}")
 
         return ArticleMetadata(
             title=entry["title"],
