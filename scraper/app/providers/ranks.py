@@ -24,6 +24,7 @@ RANKS: dict[int, list[ProviderKey]] = {
         ProviderKey.NECENZURIRANO,
         ProviderKey.NOVA24TV,
         ProviderKey.DEMOKRACIJA,
+        ProviderKey.DOMOVINA,
         ProviderKey.CEKIN,
         ProviderKey.INFO360,
     ],

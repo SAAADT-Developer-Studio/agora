@@ -118,6 +118,12 @@ class NewsProvider(ABC):
     def extract_article_from_html(self, html: str, url: str) -> ExtractedArticle:
         doc = parse(html)
 
+        image_urls = []
+        try:
+            image_urls = self.extract_image_urls_from_html(html)
+        except Exception as e:
+            logging.error(f"Error extracting image URLs from article HTML: {e}")
+
         return ExtractedArticle(
             title=doc.title,
             deck=doc.excerpt,
@@ -125,7 +131,11 @@ class NewsProvider(ABC):
             author=doc.byline,
             url=url,
             published_at=doc.published_time,
+            image_urls=image_urls,
         )
+
+    def extract_image_urls_from_html(self, html: str) -> list[str]:
+        return []
 
     async def extract_article(self, url: str) -> ExtractedArticle:
         html = await self.fetch_article_html(url)

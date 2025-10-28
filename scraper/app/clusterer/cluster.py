@@ -57,14 +57,7 @@ async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -
     ]
     results = await model.abatch(inputs=inputs)
     # langchain returns some weird ass structure
-    titles = [
-        (
-            result.content[0]
-            if isinstance(result.content[0], str)
-            else articles[0].title if isinstance(result.content, list) else result.content
-        )
-        for result, articles in zip(results, article_lists)
-    ]
+    titles = [result.content for result in results]
     return titles
     # return [articles[0].title for articles in article_lists]
 
