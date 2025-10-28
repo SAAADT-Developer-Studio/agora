@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime
 import itertools
 from bs4 import BeautifulSoup
-import logging
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata, ExtractedArticle
 from app.providers.enums import ProviderKey, BiasRating
@@ -20,18 +19,7 @@ class Maribor24Provider(NewsProvider):
             bias_rating=BiasRating.CENTER_RIGHT.value,
         )
 
-    async def extract_article(self, url: str) -> ExtractedArticle:
-        html = await self.fetch_article_html(url)
-        extracted_article = self.extract_article_from_html(html, url)
-
-        try:
-            extracted_article.image_urls = self.extract_image_urls(html)
-        except Exception as e:
-            logging.error(f"Error extracting images from {url}: {e}")
-
-        return extracted_article
-
-    def extract_image_urls(self, html: str) -> list[str]:
+    def extract_image_urls_from_html(self, html: str) -> list[str]:
         soup = BeautifulSoup(html, "html.parser")
         image_urls: list[str] = []
 
