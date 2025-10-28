@@ -1,7 +1,4 @@
-from datetime import datetime
-import xmltodict
-import httpx
-
+import logging
 
 from app.providers.news_provider import NewsProvider, ArticleMetadata
 from app.providers.enums import ProviderKey, BiasRating
@@ -17,20 +14,14 @@ class N1InfoProvider(NewsProvider):
             bias_rating=BiasRating.CENTER.value,
         )
 
-    # async def fetch_articles(self) -> list[ArticleMetadata]:
-    #     url = f"{self.url}/sitemap/sitemap_n1infoslovenia_post_1.xml"
-    #     async with httpx.AsyncClient() as client:
-    #         response = await client.get(url)
-    #         document = xmltodict.parse(response.text)
-    #         articles = document["urlset"]["url"]
-    #         urls: list[ArticleMetadata] = []
-    #         for article in articles:
-    #             article_url: str = article["loc"]
-    #             last_mod = datetime.fromisoformat(article["lastmod"])
-    #             urls.append(
-    #                 ArticleMetadata(
-    #                     link=article_url,
-    #                     published_at=last_mod,
-    #                 )
-    #             )
-    #         return articles
+    def parse_rss_entry_image_urls(self, entry: dict) -> list[str]:
+        image_urls = []
+        try:
+            for media in entry.get("media_content", []):
+                if media.get("type").startswith("image"):
+                    image_urls.append(media.get("url"))
+        except Exception as e:
+            logging.error(f"Error extracting image URLs for n1info: {e}")
+            return []
+
+        return image_urls + super().parse_rss_entry_image_urls(entry)
