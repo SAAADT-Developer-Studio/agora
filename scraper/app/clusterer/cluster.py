@@ -84,7 +84,9 @@ async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
 
     clusters_to_add = list(set(clusters.keys()) - unchanged_cluster_labels)
 
-    titles: list[str] = await generate_cluster_titles(clusters[label] for label in clusters_to_add)
+    titles: list[str] = await generate_cluster_titles(
+        [clusters[label] for label in clusters_to_add]
+    )
 
     date_str = datetime.now().strftime("%Y-%m-%d")
     clusters_to_create: list[Cluster] = [

@@ -4,7 +4,7 @@ from langchain.chat_models import init_chat_model
 import logging
 
 
-async def generate_cluster_titles(article_lists: Iterable[list[Article]]) -> list[str]:
+async def generate_cluster_titles(article_lists: list[list[Article]]) -> list[str]:
     # TODO: dont generate titles for clusters with only 1 article
     model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     inputs = [
@@ -23,9 +23,10 @@ async def generate_cluster_titles(article_lists: Iterable[list[Article]]) -> lis
     for result, articles in zip(results, article_lists):
         if isinstance(result.content, str):
             titles.append(result.content)
-        elif result.content:
+        elif isinstance(result.content, list):
             titles.append(str(result.content[0]))
         else:
+            # exception
             titles.append(articles[0].title)
-            logging.warning(f"Failed to generate title, result: {result}")
+            logging.warning(f"Failed to generate title for {len(articles)} articles: {result}")
     return titles
