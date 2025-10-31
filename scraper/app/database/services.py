@@ -15,7 +15,7 @@ class ArticleService:
     @staticmethod
     def filter_new_articles(article_urls: list[str], uow: UnitOfWork) -> set[str]:
         """Get URLs of articles that don't exist in the database."""
-        existing_urls = uow.articles.get_existing_urls(article_urls)
+        existing_urls = uow.articles.get_by_urls(article_urls)
         return set(article_urls) - existing_urls
 
     @staticmethod
