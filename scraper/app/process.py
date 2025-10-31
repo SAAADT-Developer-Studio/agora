@@ -15,6 +15,7 @@ from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
 from app.utils.concurrency import run_concurrently_with_limit
 from app.clusterer.cluster import run_clustering
+from app.clusterer.run_clustering import run_clustering as run_clustering_v2
 from app import config
 
 
@@ -29,7 +30,7 @@ async def process(
 
     with database_session() as uow:
         article_urls = [article_metadata.link for article_metadata in article_metadatas]
-        existing_urls = uow.articles.get_existing_urls(article_urls)
+        existing_urls = uow.articles.get_by_urls(article_urls)
 
         new_article_metadatas: list[ArticleMetadata] = [
             article_metadata
@@ -60,7 +61,8 @@ async def process(
         ):
             article = Article(
                 url=article_metadata.link,
-                title=article_metadata.title,
+                title=article_metadata.title
+                or (extracted_article.title if extracted_article else ""),
                 author=extracted_article.author if extracted_article else None,
                 deck=extracted_article.deck if extracted_article else None,
                 content=extracted_article.content if extracted_article else None,
@@ -82,6 +84,11 @@ async def process(
         uow.session.flush()
 
         await run_clustering(uow, articles)
+
+        uow.commit()
+        uow.session.flush()
+        # by this point, its fine if it fails
+        await run_clustering_v2(uow)
 
         end_time = time.perf_counter()
         logging.info(
@@ -154,12 +161,12 @@ async def analyze_articles(
 
 async def generate_embeddings(
     article_metadatas: list[ArticleMetadata],
-    summaries: list[ArticleAnalysis],
+    analyses: list[ArticleAnalysis],
     embeddings: Embeddings,
 ) -> list[list[float]]:
     documents = [
-        f"{article.title}\n{summary.summary}"
-        for article, summary in zip(article_metadatas, summaries)
+        f"{article.title}\n{analysis.summary}"
+        for article, analysis in zip(article_metadatas, analyses)
     ]
     article_embeddings = await embeddings.aembed_documents(documents)
     return article_embeddings

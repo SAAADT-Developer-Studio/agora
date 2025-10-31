@@ -1,11 +1,6 @@
-import xmltodict
-import httpx
-import asyncio
-from datetime import datetime
-import itertools
 from bs4 import BeautifulSoup
 
-from app.providers.news_provider import NewsProvider, ArticleMetadata, ExtractedArticle
+from app.providers.news_provider import NewsProvider
 from app.providers.enums import ProviderKey, BiasRating
 
 

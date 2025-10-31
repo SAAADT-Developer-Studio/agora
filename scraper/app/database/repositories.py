@@ -5,9 +5,10 @@ Separates concerns and provides clean abstractions for each entity.
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
 from sqlalchemy import select, func
-from sqlalchemy.orm import Session
-from .schema import Article, NewsProvider, Cluster
-from datetime import datetime, timedelta, timezone
+from sqlalchemy.orm import Session, selectinload, load_only
+from .schema import Article, NewsProvider, Cluster, ClusterRun, ArticleCluster, ClusterV2
+from datetime import datetime, timedelta
+from typing import Sequence
 
 
 class ArticleRepository:
@@ -16,28 +17,16 @@ class ArticleRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def get_existing_urls(self, urls: list[str]) -> set[str]:
+    def get_by_urls(self, urls: list[str]) -> set[str]:
         """Get URLs that already exist in the database."""
         query_results = self.session.query(Article.url).filter(Article.url.in_(urls)).all()
         return {result[0] for result in query_results}
-
-    def get_articles_with_summaries(self) -> list[Article]:
-        """Get all articles that have summaries."""
-        return self.session.query(Article).filter(Article.summary.isnot(None)).all()
-
-    def get_by_id(self, article_id: int) -> Article | None:
-        """Get article by ID."""
-        return self.session.query(Article).filter(Article.id == article_id).first()
-
-    def get_by_url(self, url: str) -> Article | None:
-        """Get article by URL."""
-        return self.session.query(Article).filter(Article.url == url).first()
 
     def bulk_create(self, articles: list[Article]) -> None:
         """Bulk insert articles."""
         self.session.add_all(articles)
 
-    def get_clustered_and_pad_articles(self) -> list[Article]:
+    def get_clustered_and_pad_articles(self) -> Sequence[Article]:
         clustered = select(Article).where(Article.cluster_id.is_not(None)).cte(name="clustered")
 
         clustered_cnt_sq = select(func.count()).select_from(clustered).scalar_subquery()
@@ -54,6 +43,21 @@ class ArticleRepository:
         stmt = select(Article).from_statement(query)
         result = self.session.scalars(stmt).all()
         return result
+
+    def get_latest(self, count: int) -> Sequence[Article]:
+        return self.session.scalars(
+            select(Article).order_by(Article.published_at.desc()).limit(count)
+        ).all()
+
+    def get_all_since(self, from_date: datetime) -> Sequence[Article]:
+        # limit to 3000 just in case
+        return self.session.scalars(
+            select(Article)
+            .where(Article.published_at > from_date)
+            .order_by(Article.published_at.desc())
+            .options(load_only(Article.id, Article.title, Article.embedding, Article.published_at))
+            .limit(3000)
+        ).all()
 
 
 class NewsProviderRepository:
@@ -94,10 +98,6 @@ class ClusterRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def get_by_id(self, cluster_id: int) -> Cluster | None:
-        """Get cluster by ID."""
-        return self.session.query(Cluster).filter(Cluster.id == cluster_id).first()
-
     def bulk_create(self, clusters: list[Cluster]) -> None:
         """Bulk insert clusters."""
         self.session.add_all(clusters)
@@ -121,3 +121,45 @@ class ClusterRepository:
         self.session.query(Cluster).filter(
             Cluster.id.in_(select(subq.c.cluster_id)), Cluster.id.isnot(None)
         ).delete(synchronize_session=False)
+
+    def get_all_nonempty(self) -> Sequence[Cluster]:
+        """Get all clusters that have at least one article."""
+        # i don't think this works fully?
+        stmt = select(Cluster).join(Article, Cluster.id == Article.cluster_id).group_by(Cluster.id)
+        return self.session.scalars(stmt).all()
+
+
+class ClusterV2Repository:
+    """Repository for ClusterV2 entity operations."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def bulk_create(self, clusters: list[ClusterV2]) -> None:
+        """Bulk insert clusters."""
+        self.session.add_all(clusters)
+
+
+class ClusterRunRepository:
+    """Repository for ClusterRun entity operations."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def create(self, cluster_run: ClusterRun) -> None:
+        """Create a new cluster run."""
+        self.session.add(cluster_run)
+
+    def get_latest(self) -> ClusterRun | None:
+        """Get the latest cluster run."""
+        return self.session.scalars(
+            select(ClusterRun)
+            .options(
+                selectinload(ClusterRun.clusters)
+                .selectinload(ClusterV2.memberships)
+                .selectinload(ArticleCluster.article)
+                .load_only(Article.id, Article.title, Article.embedding, Article.published_at)
+            )
+            .order_by(ClusterRun.created_at.desc())
+            .limit(1)
+        ).first()

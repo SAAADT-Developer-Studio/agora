@@ -3,10 +3,8 @@ import hdbscan
 import numpy as np
 import pandas as pd
 from umap import UMAP
-from pprint import pprint
 from sklearn.preprocessing import Normalizer
-from langchain.chat_models import init_chat_model
-from typing import Iterable
+from typing import Sequence
 import logging
 import json
 
@@ -14,14 +12,16 @@ from app.database.unit_of_work import database_session, UnitOfWork
 from app.database.schema import Article, Cluster
 from app.utils.slugify import slugify
 from datetime import datetime
+from app.clusterer.hash_cluster import hash_cluster
+from app.clusterer.generate_cluster_titles import generate_cluster_titles
 
 
-def cluster(embeddings: list[np.ndarray]) -> list[int]:
+def cluster_impl(embeddings: list[np.ndarray]) -> list[int]:
     hdb = hdbscan.HDBSCAN(
         min_samples=2,
-        min_cluster_size=3,
+        min_cluster_size=2,
         cluster_selection_method="leaf",
-        cluster_selection_epsilon=0.25,
+        cluster_selection_epsilon=0.2,
     ).fit(embeddings)
 
     labels: list[int] = hdb.labels_.astype(int)
@@ -38,32 +38,19 @@ def assign_singletons(labels: list[int]) -> list[int]:
     return new_labels
 
 
-def hash_cluster(articles: list[Article]) -> int:
-    return hash(tuple(sorted(article.id for article in articles)))
+def cluster(articles: Sequence[Article]) -> dict[int, list[Article]]:
+    embeddings = [np.array(article.embedding) for article in articles]
+    labels = assign_singletons(cluster_impl(embeddings))
+    clusters: dict[int, list[Article]] = {}
+    for label, article in zip(labels, articles):
+        assert label != -1, "Label -1 should not be present after assign_singletons"
+        clusters.setdefault(label, []).append(article)
+    return clusters
 
 
-async def generate_titles_for_clusters(article_lists: Iterable[list[Article]]) -> list[str]:
-    # TODO: dont generate titles for clusters with only 1 article
-    model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
-    inputs = [
-        "You are a professional Slovenian news editor. "
-        + "Generate a descriptive and engaging collective title for the following news article titles. "
-        + "Write it in slovenian, output only a single title, don't include any other text or try to output markdown.\n\n"
-        + "\n".join(
-            article.title
-            for article in sorted(articles[:5], key=lambda a: a.published_at, reverse=True)
-        )
-        for articles in article_lists
-    ]
-    results = await model.abatch(inputs=inputs)
-    # langchain returns some weird ass structure
-    titles = [result.content for result in results]
-    return titles
-    # return [articles[0].title for articles in article_lists]
-
-
+# TODO: this is old, remove after migration
 async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
-    prev_articles = uow.articles.get_clustered_and_pad_articles()
+    prev_articles = list(uow.articles.get_clustered_and_pad_articles())
 
     prev_clusters: dict[int, list[Article]] = {}
 
@@ -80,15 +67,7 @@ async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
         existing_cluster_hashes.add(cluster_hash)
 
     articles = prev_articles + new_articles
-    embeddings: list[np.ndarray] = [
-        np.array(article.embedding) for article in prev_articles + new_articles
-    ]
-    labels = assign_singletons(cluster(embeddings))
-
-    clusters: dict[int, list[Article]] = {}
-    for label, article in zip(labels, articles):
-        assert label != -1, "Label -1 should not be present after assign_singletons"
-        clusters.setdefault(label, []).append(article)
+    clusters = cluster(articles)
 
     unchanged_prev_cluster_ids = set()
     unchanged_cluster_labels = set()
@@ -105,8 +84,8 @@ async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
 
     clusters_to_add = list(set(clusters.keys()) - unchanged_cluster_labels)
 
-    titles: list[str] = await generate_titles_for_clusters(
-        clusters[label] for label in clusters_to_add
+    titles: list[str] = await generate_cluster_titles(
+        [clusters[label] for label in clusters_to_add]
     )
 
     date_str = datetime.now().strftime("%Y-%m-%d")
