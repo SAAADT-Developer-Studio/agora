@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from app.database.schema import Article, ClusterRun, ClusterV2, ArticleCluster
 from app.database.unit_of_work import UnitOfWork
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.clusterer.cluster import cluster
 from app.clusterer.hash_cluster import hash_cluster
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
@@ -22,12 +22,15 @@ def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, Clus
 
 
 def filter_old_clusters(clusters: Sequence[ClusterV2], days: int = 3) -> Sequence[ClusterV2]:
-    cutoff_date = datetime.now() - timedelta(days=days)
-    return [
-        cluster
-        for cluster in clusters
-        if max(m.article.published_at for m in cluster.memberships) > cutoff_date
-    ]
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+    filtered_clusters: list[ClusterV2] = []
+    for cluster in clusters:
+        if (
+            len(cluster.memberships) > 0
+            and max(m.article.published_at for m in cluster.memberships) > cutoff_date
+        ):
+            filtered_clusters.append(cluster)
+    return filtered_clusters
 
 
 async def run_clustering(uow: UnitOfWork):
@@ -57,10 +60,9 @@ async def run_clustering(uow: UnitOfWork):
     latest_article_date = (
         max(article.published_at for article in prev_articles)
         if len(prev_articles) > 0
-        else datetime.now() - timedelta(days=3)
+        else datetime.now(timezone.utc) - timedelta(days=3)
     )
 
-    # TODO: check if the new articles are really included in this
     new_articles = uow.articles.get_all_since(latest_article_date)
 
     # limit to 6000 just in case
@@ -92,14 +94,12 @@ async def run_clustering(uow: UnitOfWork):
     new_clusters: list[ClusterV2] = []
 
     for i, (title, cluster_articles) in enumerate(final):
-        print("Generating cluster:", title, [a.title for a in cluster_articles])
         date_str = datetime.now().strftime("%Y-%m-%d-%H-%M")
         cluster_v2 = ClusterV2(
             title=title,
             slug=f"{slugify(title)}-{date_str}-{i}",
             run_id=current_run.id,
         )
-        # TODO: these are not stored in the db for some reason
         for article in cluster_articles:
             cluster_v2.memberships.append(
                 ArticleCluster(
