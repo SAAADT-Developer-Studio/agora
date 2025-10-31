@@ -21,6 +21,15 @@ def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, Clus
     return hash_to_cluster_mapping
 
 
+def filter_old_clusters(clusters: Sequence[ClusterV2], days: int = 3) -> Sequence[ClusterV2]:
+    cutoff_date = datetime.now() - timedelta(days=days)
+    return [
+        cluster
+        for cluster in clusters
+        if max(m.article.published_at for m in cluster.memberships) > cutoff_date
+    ]
+
+
 async def run_clustering(uow: UnitOfWork):
     prev_run = uow.cluster_runs.get_latest()
     if prev_run is None:
@@ -34,9 +43,10 @@ async def run_clustering(uow: UnitOfWork):
     uow.cluster_runs.create(current_run)
     uow.session.flush()
 
-    prev_clusters = prev_run.clusters
-
-    # TODO: drop old clusters
+    prev_clusters = filter_old_clusters(
+        clusters=prev_run.clusters,
+        days=3,
+    )
 
     prev_articles = list(
         itertools.chain.from_iterable(
