@@ -16,14 +16,8 @@ class DemokracijaProvider(NewsProvider):
         )
 
     def parse_rss_entry_image_urls(self, entry: dict) -> list[str]:
-        image_urls = []
-        try:
-            description = entry.get("summary", "") or entry.get("description", "")
-            img_url = parse_description_image(description)
-            if img_url:
-                image_urls.append(img_url)
-        except Exception as e:
-            logging.error(f"Error extracting image URLs for 24ur: {e}")
-            return []
-
-        return image_urls
+        description = entry.get("summary", "") or entry.get("description", "")
+        img_url = parse_description_image(description)
+        if img_url:
+            return [img_url]
+        return []
