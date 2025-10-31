@@ -60,7 +60,8 @@ async def process(
         ):
             article = Article(
                 url=article_metadata.link,
-                title=article_metadata.title,
+                title=article_metadata.title
+                or (extracted_article.title if extracted_article else ""),
                 author=extracted_article.author if extracted_article else None,
                 deck=extracted_article.deck if extracted_article else None,
                 content=extracted_article.content if extracted_article else None,
