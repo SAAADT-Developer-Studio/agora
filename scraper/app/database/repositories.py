@@ -16,22 +16,10 @@ class ArticleRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def get_existing_urls(self, urls: list[str]) -> set[str]:
+    def get_by_urls(self, urls: list[str]) -> set[str]:
         """Get URLs that already exist in the database."""
         query_results = self.session.query(Article.url).filter(Article.url.in_(urls)).all()
         return {result[0] for result in query_results}
-
-    def get_articles_with_summaries(self) -> list[Article]:
-        """Get all articles that have summaries."""
-        return self.session.query(Article).filter(Article.summary.isnot(None)).all()
-
-    def get_by_id(self, article_id: int) -> Article | None:
-        """Get article by ID."""
-        return self.session.query(Article).filter(Article.id == article_id).first()
-
-    def get_by_url(self, url: str) -> Article | None:
-        """Get article by URL."""
-        return self.session.query(Article).filter(Article.url == url).first()
 
     def bulk_create(self, articles: list[Article]) -> None:
         """Bulk insert articles."""

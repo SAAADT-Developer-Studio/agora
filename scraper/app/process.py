@@ -29,7 +29,7 @@ async def process(
 
     with database_session() as uow:
         article_urls = [article_metadata.link for article_metadata in article_metadatas]
-        existing_urls = uow.articles.get_existing_urls(article_urls)
+        existing_urls = uow.articles.get_by_urls(article_urls)
 
         new_article_metadatas: list[ArticleMetadata] = [
             article_metadata
