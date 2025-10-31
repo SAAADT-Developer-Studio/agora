@@ -83,11 +83,6 @@ async def process(
         uow.commit()
         uow.session.flush()
 
-        await run_clustering(uow, articles)
-
-        uow.commit()
-        uow.session.flush()
-        # by this point, its fine if it fails
         await run_clustering_v2(uow)
 
         end_time = time.perf_counter()
