@@ -77,7 +77,7 @@ A news site for all slovenian news sites: https://www.telex.si/viri.php
 
 Identify the RSS feed URL for the target website. This can typically be found by:
 
-This is a usefull site for finding the url: https://lighthouseapp.io/tools/feed-finder
+This is a useful site for finding the url: https://lighthouseapp.io/tools/feed-finder
 
 - **Viewing Page Source:** Inspect the HTML source code for `<link>` tags with the following attributes:
   - `rel="alternate"`

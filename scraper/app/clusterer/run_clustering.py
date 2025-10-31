@@ -70,7 +70,7 @@ async def run_clustering(uow: UnitOfWork):
         6000, itertools.chain(prev_articles, new_articles), key=lambda a: a.published_at
     )
 
-    if len(articles) == 0:  # remove this
+    if len(articles) == 0:
         logging.warning("No articles to cluster. Exiting.")
         return
 

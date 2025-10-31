@@ -124,6 +124,7 @@ class ClusterRepository:
 
     def get_all_nonempty(self) -> Sequence[Cluster]:
         """Get all clusters that have at least one article."""
+        # i don't think this works fully?
         stmt = select(Cluster).join(Article, Cluster.id == Article.cluster_id).group_by(Cluster.id)
         return self.session.scalars(stmt).all()
 

@@ -19,9 +19,9 @@ from app.clusterer.generate_cluster_titles import generate_cluster_titles
 def cluster_impl(embeddings: list[np.ndarray]) -> list[int]:
     hdb = hdbscan.HDBSCAN(
         min_samples=2,
-        min_cluster_size=3,
+        min_cluster_size=2,
         cluster_selection_method="leaf",
-        cluster_selection_epsilon=0.25,
+        cluster_selection_epsilon=0.2,
     ).fit(embeddings)
 
     labels: list[int] = hdb.labels_.astype(int)

@@ -18,7 +18,6 @@ from sqlalchemy.orm import (
     mapped_column,
     relationship,
     MappedAsDataclass,
-    DeclarativeBase,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 import app.config as config

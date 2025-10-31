@@ -1,4 +1,3 @@
-from typing import Iterable
 from app.database.schema import Article
 from langchain.chat_models import init_chat_model
 import logging
