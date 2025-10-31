@@ -111,6 +111,9 @@ async def run_clustering(uow: UnitOfWork):
         new_clusters.append(cluster_v2)
     uow.clusters_v2.bulk_create(new_clusters)
 
+    logging.info(f"Created {len(generated_titles)} new clusters.")
+    logging.info(f"Kept {len(final) - len(generated_titles)} clusters.")
+
 
 # this is a function to bootstrap the clustering run for existing articles
 # in case something goes terribly wrong
