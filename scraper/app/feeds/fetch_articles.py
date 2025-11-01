@@ -1,10 +1,12 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from typing import Callable
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app import config
 from app.providers.providers import PROVIDERS
 from app.providers.news_provider import NewsProvider, ArticleMetadata
+from app.providers.enums import ProviderKey
 
 
 CONCURRENCY_LIMIT = 5
@@ -15,6 +17,25 @@ semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
 def is_recent(date: datetime) -> bool:
     return date > datetime.now(date.tzinfo) - timedelta(**config.TIME_WINDOW)
+
+
+EXCLUSION_RULES: list[tuple[str, Callable[[ArticleMetadata], bool]]] = [
+    (
+        ProviderKey.STA.value,
+        lambda a: a.title.startswith(("Razmere na slovenskih cestah ob", "Pregled - ")),
+    ),
+]
+
+
+def filter_out_useless_articles(articles: list[ArticleMetadata]) -> list[ArticleMetadata]:
+    return [
+        article
+        for article in articles
+        if not any(
+            article.provider_key == provider_key and should_exclude(article)
+            for provider_key, should_exclude in EXCLUSION_RULES
+        )
+    ]
 
 
 @retry(
@@ -45,4 +66,4 @@ async def fetch_articles(provider_keys: list[str] | None = None):
             successes.extend(result)
             logging.info(f"Fetched {len(result)} articles from {provider_key}")
 
-    return successes
+    return filter_out_useless_articles(successes)

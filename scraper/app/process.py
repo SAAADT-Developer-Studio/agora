@@ -14,8 +14,7 @@ from app.database.unit_of_work import database_session
 from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
 from app.utils.concurrency import run_concurrently_with_limit
-from app.clusterer.cluster import run_clustering
-from app.clusterer.run_clustering import run_clustering as run_clustering_v2
+from app.clusterer.run_clustering import run_clustering
 from app import config
 
 
@@ -83,7 +82,7 @@ async def process(
         uow.commit()
         uow.session.flush()
 
-        await run_clustering_v2(uow)
+        await run_clustering(uow)
 
         end_time = time.perf_counter()
         logging.info(
