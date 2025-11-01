@@ -47,8 +47,6 @@ async def process(
         extracted_articles, _ = await run_concurrently_with_limit(tasks, limit=3)
 
         article_analyses = await analyze_articles(new_article_metadatas, extracted_articles)
-        for metadata, analysis in zip(new_article_metadatas, article_analyses):
-            print(metadata.title, "search: ", analysis.stock_image_search)
 
         articles_embeddings, stock_image_urls = await asyncio.gather(
             generate_embeddings(new_article_metadatas, article_analyses, embeddings),
@@ -72,7 +70,7 @@ async def process(
             image_urls = (
                 extracted_article.image_urls if extracted_article else []
             ) + article_metadata.image_urls
-            if (not image_urls or len(image_urls) == 0) and stock_image_url:
+            if not image_urls and stock_image_url:
                 image_urls = [stock_image_url]
 
             article = Article(
@@ -97,7 +95,7 @@ async def process(
 
         uow.commit()
         uow.session.flush()
-        exit()
+
         await run_clustering(uow)
 
         end_time = time.perf_counter()
