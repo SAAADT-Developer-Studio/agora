@@ -17,6 +17,19 @@ def is_recent(date: datetime) -> bool:
     return date > datetime.now(date.tzinfo) - timedelta(**config.TIME_WINDOW)
 
 
+def filter_out_useless_articles(articles: list[ArticleMetadata]) -> list[ArticleMetadata]:
+    useful_articles = []
+    for article in articles:
+        # maybe just mark this as useless in the db later
+        if article.provider_key == "sta" and (
+            article.title.startswith("Razmere na slovenskih cestah ob")
+            or article.title.startswith("Pregled - ")
+        ):
+            continue
+        useful_articles.append(article)
+    return useful_articles
+
+
 @retry(
     stop=stop_after_attempt(RETRY_ATTEMPTS),
     wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -45,4 +58,4 @@ async def fetch_articles(provider_keys: list[str] | None = None):
             successes.extend(result)
             logging.info(f"Fetched {len(result)} articles from {provider_key}")
 
-    return successes
+    return filter_out_useless_articles(successes)
