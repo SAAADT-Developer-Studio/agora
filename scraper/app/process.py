@@ -14,6 +14,7 @@ from app.database.unit_of_work import database_session
 from app.database.services import ArticleService
 from app.feeds.fetch_articles import fetch_articles
 from app.utils.concurrency import run_concurrently_with_limit
+from app.utils.pexels import search_pexels_image
 from app.clusterer.run_clustering import run_clustering
 from app import config
 
@@ -46,18 +47,34 @@ async def process(
         extracted_articles, _ = await run_concurrently_with_limit(tasks, limit=3)
 
         article_analyses = await analyze_articles(new_article_metadatas, extracted_articles)
+        for metadata, analysis in zip(new_article_metadatas, article_analyses):
+            print(metadata.title, "search: ", analysis.stock_image_search)
 
-        articles_embeddings = await generate_embeddings(
-            new_article_metadatas, article_analyses, embeddings
+        articles_embeddings, stock_image_urls = await asyncio.gather(
+            generate_embeddings(new_article_metadatas, article_analyses, embeddings),
+            search_stock_images(new_article_metadatas, extracted_articles, article_analyses),
         )
 
         articles: list[Article] = []
-        for article_metadata, extracted_article, article_analysis, embedding in zip(
+        for (
+            article_metadata,
+            extracted_article,
+            article_analysis,
+            embedding,
+            stock_image_url,
+        ) in zip(
             new_article_metadatas,
             extracted_articles,
             article_analyses,
             articles_embeddings,
+            stock_image_urls,
         ):
+            image_urls = (
+                extracted_article.image_urls if extracted_article else []
+            ) + article_metadata.image_urls
+            if (not image_urls or len(image_urls) == 0) and stock_image_url:
+                image_urls = [stock_image_url]
+
             article = Article(
                 url=article_metadata.link,
                 title=article_metadata.title
@@ -70,8 +87,7 @@ async def process(
                 published_at=article_metadata.published_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
-                image_urls=(extracted_article.image_urls if extracted_article else [])
-                + article_metadata.image_urls,
+                image_urls=image_urls,
                 categories=article_analysis.categories[:3],
             )
             pprint(article)
@@ -81,7 +97,7 @@ async def process(
 
         uow.commit()
         uow.session.flush()
-
+        exit()
         await run_clustering(uow)
 
         end_time = time.perf_counter()
@@ -112,6 +128,11 @@ class ArticleAnalysis(BaseModel):
     rank: int = Field(description="The importance rank of the article from 1 to 10")
     categories: list[str] = Field(
         description="At most 3 applicable categories from the predefined list"
+    )
+    stock_image_search: str = Field(
+        description="A short, general concept in English suitable for finding a relevant "
+        "stock image. Avoid specific people, places, brands, or details. "
+        "Example: 'business meeting', 'summer landscape', 'voting'."
     )
 
 
@@ -164,3 +185,27 @@ async def generate_embeddings(
     ]
     article_embeddings = await embeddings.aembed_documents(documents)
     return article_embeddings
+
+
+async def search_stock_images(
+    article_metadatas: list[ArticleMetadata],
+    extracted_articles: list[ExtractedArticle | None],
+    analyses: list[ArticleAnalysis],
+) -> list[str | None]:
+    tasks = []
+    for article_metadata, extracted_article, analysis in zip(
+        article_metadatas, extracted_articles, analyses
+    ):
+        # Check if article has any images
+        extracted_imgs = extracted_article.image_urls if extracted_article else []
+        metadata_imgs = article_metadata.image_urls or []
+        has_images = len(extracted_imgs) > 0 or len(metadata_imgs) > 0
+
+        # Search only if no images exist
+        if not has_images:
+            tasks.append(search_pexels_image(analysis.stock_image_search))
+        else:
+            tasks.append(asyncio.sleep(0, result=None))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    return [None if isinstance(r, BaseException) else r for r in results]

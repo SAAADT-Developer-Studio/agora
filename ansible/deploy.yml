@@ -12,6 +12,7 @@
     app_secrets:
       GOOGLE_API_KEY: "{{ lookup('env', 'GOOGLE_API_KEY') }}"
       DATABASE_URL: "{{ lookup('env', 'DATABASE_URL') }}"
+      PEXELS_API_KEY: "{{ lookup('env', 'PEXELS_API_KEY') }}"
       APP_ENV: production
 
   tasks:
