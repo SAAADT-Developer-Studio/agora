@@ -24,6 +24,7 @@ TIME_WINDOW = {
 APP_ENV = ensure_env_var("APP_ENV")
 GOOGLE_API_KEY = ensure_env_var("GOOGLE_API_KEY")
 DATABASE_URL = ensure_env_var("DATABASE_URL")
+PEXELS_API_KEY = ensure_env_var("PEXELS_API_KEY")
 
 
 @dataclass

@@ -75,4 +75,5 @@ jobs:
           DOCKER_HUB_USERNAME: ${{ env.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
