@@ -9,11 +9,7 @@ import logging
 import json
 
 from app.database.unit_of_work import database_session, UnitOfWork
-from app.database.schema import Article, Cluster
-from app.utils.slugify import slugify
-from datetime import datetime
-from app.clusterer.hash_cluster import hash_cluster
-from app.clusterer.generate_cluster_titles import generate_cluster_titles
+from app.database.schema import Article
 
 
 def cluster_impl(embeddings: list[np.ndarray]) -> list[int]:
@@ -48,73 +44,6 @@ def cluster(articles: Sequence[Article]) -> dict[int, list[Article]]:
     return clusters
 
 
-# TODO: this is old, remove after migration
-async def run_clustering(uow: UnitOfWork, new_articles: list[Article]):
-    prev_articles = list(uow.articles.get_clustered_and_pad_articles())
-
-    prev_clusters: dict[int, list[Article]] = {}
-
-    for article in prev_articles:
-        if article.cluster_id is not None:
-            prev_clusters.setdefault(article.cluster_id, []).append(article)
-
-    existing_cluster_hashes = set()
-    existing_cluster_hash_to_id: dict[int, int] = {}
-
-    for cluster_id, cluster_articles in prev_clusters.items():
-        cluster_hash = hash_cluster(cluster_articles)
-        existing_cluster_hash_to_id[cluster_hash] = cluster_id
-        existing_cluster_hashes.add(cluster_hash)
-
-    articles = prev_articles + new_articles
-    clusters = cluster(articles)
-
-    unchanged_prev_cluster_ids = set()
-    unchanged_cluster_labels = set()
-
-    for label, cluster_articles in clusters.items():
-        cluster_hash = hash_cluster(cluster_articles)
-        if cluster_hash in existing_cluster_hashes:
-            unchanged_prev_cluster_ids.add(existing_cluster_hash_to_id[cluster_hash])
-            unchanged_cluster_labels.add(label)
-
-    clusters_to_delete = set(prev_clusters.keys()) - unchanged_prev_cluster_ids
-
-    uow.clusters.delete_by_ids(list(clusters_to_delete))
-
-    clusters_to_add = list(set(clusters.keys()) - unchanged_cluster_labels)
-
-    titles: list[str] = await generate_cluster_titles(
-        [clusters[label] for label in clusters_to_add]
-    )
-
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    clusters_to_create: list[Cluster] = [
-        Cluster(title=title, slug=f"{slugify(title)}-{date_str}") for title in titles
-    ]
-
-    cluster_articles_count = sum(len(clusters[label]) for label in clusters_to_add)
-    unchanged_cluster_articles_count = sum(
-        len(prev_clusters[cluster_id]) for cluster_id in unchanged_prev_cluster_ids
-    )
-    logging.info(
-        f"Creating {len(clusters_to_create)} new clusters containing {cluster_articles_count} articles."
-    )
-    logging.info(
-        f"Keeping {len(unchanged_cluster_labels)} clusters containing {unchanged_cluster_articles_count} articles."
-    )
-
-    uow.clusters.bulk_create(clusters_to_create)
-    uow.session.flush()  # Ensure IDs are assigned to clusters
-
-    # assign articles their cluster IDs
-    for label, created_cluster in zip(clusters_to_add, clusters_to_create):
-        for article in clusters[label]:
-            article.cluster_id = created_cluster.id
-
-    uow.clusters.delete_old_clusters()
-
-
 if __name__ == "__main__":
     # with database_session() as uow:
     #     articles = uow.articles.get_articles_with_summaries()
@@ -128,8 +57,8 @@ if __name__ == "__main__":
     #     json.dump(parsed_articles, open("./articles.json", "w"), indent=2, ensure_ascii=False)
     #     return
 
-    with database_session() as uow:
-        asyncio.run(run_clustering(uow, []))
+    # with database_session() as uow:
+    #     asyncio.run(run_clustering(uow))
 
     exit()
     articles = json.load(open("./articles.json", "r"))

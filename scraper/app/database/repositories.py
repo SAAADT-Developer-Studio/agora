@@ -98,30 +98,6 @@ class ClusterRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def bulk_create(self, clusters: list[Cluster]) -> None:
-        """Bulk insert clusters."""
-        self.session.add_all(clusters)
-
-    def delete_by_ids(self, cluster_ids: list[int]) -> None:
-        """Delete clusters by IDs."""
-        self.session.query(Cluster).filter(Cluster.id.in_(cluster_ids)).delete(
-            synchronize_session=False
-        )
-
-    def delete_old_clusters(self) -> None:
-        """Delete clusters whose most recent article is older than 3 days."""
-        three_days_ago = datetime.now() - timedelta(days=3)
-
-        subq = (
-            self.session.query(Article.cluster_id)
-            .group_by(Article.cluster_id)
-            .having(func.max(Article.published_at) < three_days_ago)
-            .subquery()
-        )
-        self.session.query(Cluster).filter(
-            Cluster.id.in_(select(subq.c.cluster_id)), Cluster.id.isnot(None)
-        ).delete(synchronize_session=False)
-
     def get_all_nonempty(self) -> Sequence[Cluster]:
         """Get all clusters that have at least one article."""
         # i don't think this works fully?
