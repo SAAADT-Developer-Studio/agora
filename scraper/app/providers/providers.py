@@ -25,6 +25,7 @@ from app.providers.bloombergadria import BloombergAdriaProvider
 from app.providers.info360 import Info360Provider
 from app.providers.lokalec import LokalecProvider
 from app.providers.domovina import DomovinaProvider
+from app.providers.zanimame import ZanimaMeProvider
 
 
 PROVIDERS: list[NewsProvider] = [
@@ -53,4 +54,5 @@ PROVIDERS: list[NewsProvider] = [
     Info360Provider(),
     LokalecProvider(),
     DomovinaProvider(),
+    ZanimaMeProvider(),
 ]
