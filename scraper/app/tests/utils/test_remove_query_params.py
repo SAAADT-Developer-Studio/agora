@@ -24,7 +24,7 @@ def test_remove_query_params_without_params():
 
 
 def test_remove_query_params_with_fragment():
-    """Test removing query parameters while preserving URL structure."""
+    """Test removing query parameters and fragments from URL."""
     url = "https://example.com/path?key=value#fragment"
     expected = "https://example.com/path"
     assert remove_query_params(url) == expected
