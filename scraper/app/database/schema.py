@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
     UniqueConstraint,
+    Enum,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import (
@@ -22,6 +23,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 import app.config as config
 import uuid
+import enum
 
 
 class Base(MappedAsDataclass, DeclarativeBase):
@@ -58,6 +60,10 @@ class Article(Base):
 
     cluster_assignments: Mapped[List["ArticleCluster"]] = relationship(
         "ArticleCluster", back_populates="article", cascade="all, delete-orphan", init=False
+    )
+
+    social_post_links: Mapped[List["ArticleSocialPost"]] = relationship(
+        "ArticleSocialPost", back_populates="article", cascade="all, delete-orphan", init=False
     )
 
     def __repr__(self):
@@ -187,6 +193,61 @@ class Vote(Base):
 
     def __repr__(self):
         return f"<Vote(user_id={self.user_id}, provider_id={self.provider_id}, value={self.value})>"
+
+
+class SocialPlatform(str, enum.Enum):
+    """Enum for social media platforms"""
+
+    REDDIT = "reddit"
+    # TWITTER = "twitter"
+    # FACEBOOK = "facebook"
+    # Add more platforms as needed
+
+
+class SocialPost(Base):
+    __tablename__ = "social_post"
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    platform: Mapped[SocialPlatform] = mapped_column(Enum(SocialPlatform, native_enum=False))
+    url: Mapped[str] = mapped_column(String, unique=True)
+    posted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )  # When the post was created
+    platform_metadata: Mapped[Optional[dict]] = mapped_column(
+        JSONB
+    )  # Platform-specific data (subreddit, upvotes, etc.)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now, init=False
+    )
+
+    article_links: Mapped[List["ArticleSocialPost"]] = relationship(
+        "ArticleSocialPost", back_populates="social_post", cascade="all, delete-orphan", init=False
+    )
+
+    def __repr__(self):
+        return f"<SocialPost(id={self.id}, platform={self.platform}, url={self.url})>"
+
+
+class ArticleSocialPost(Base):
+    __tablename__ = "article_social_post"
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    article_id: Mapped[int] = mapped_column(ForeignKey("article.id", ondelete="CASCADE"))
+    social_post_id: Mapped[int] = mapped_column(ForeignKey("social_post.id", ondelete="CASCADE"))
+
+    article: Mapped["Article"] = relationship(
+        "Article", back_populates="social_post_links", init=False
+    )
+    social_post: Mapped["SocialPost"] = relationship(
+        "SocialPost", back_populates="article_links", init=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("article_id", "social_post_id", name="uq_article_social_post"),
+    )
+
+    def __repr__(self):
+        return f"<ArticleSocialPost(id={self.id}, article_id={self.article_id}, social_post_id={self.social_post_id})>"
 
 
 engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
