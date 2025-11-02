@@ -1,4 +1,3 @@
-import pytest
 from app.utils.parse_description_image import parse_description_image
 
 
