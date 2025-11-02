@@ -98,6 +98,7 @@ class DeloProvider(NewsProvider):
             name="Delo",  # Display name of the provider
             url="https://www.delo.si",  # Base URL of the website
             rss_feeds=["https://www.delo.si/rss"],  # List of RSS feed URLs
+            bias_rating=BiasRating.LEFT.value,
         )
       # If website has no rss feed, implement fetching of new articles manually
     async def fetch_articles(self) -> list[ArticleMetadata]:

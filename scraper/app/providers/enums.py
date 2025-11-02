@@ -27,6 +27,7 @@ class ProviderKey(Enum):
     INFO360 = "info360"
     LOKALEC = "lokalec"
     DOMOVINA = "domovina"
+    ZANIMAME = "zanimame"
 
 
 # bias ratings are based on the following research:
