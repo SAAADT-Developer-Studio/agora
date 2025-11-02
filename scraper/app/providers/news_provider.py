@@ -92,7 +92,7 @@ class NewsProvider(ABC):
 
         return ArticleMetadata(
             title=entry["title"],
-            link=self.get_link(entry["link"]),
+            link=self.get_link(entry["link"]).rstrip("/"),
             published_at=date,
             summary=entry["summary"],
             provider_key=self.key,
