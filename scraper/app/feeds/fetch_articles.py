@@ -22,7 +22,9 @@ def is_recent(date: datetime) -> bool:
 EXCLUSION_RULES: list[tuple[str, Callable[[ArticleMetadata], bool]]] = [
     (
         ProviderKey.STA.value,
-        lambda a: a.title.startswith(("Razmere na slovenskih cestah ob", "Pregled - ")),
+        lambda a: a.title.startswith(
+            ("Razmere na slovenskih cestah ob", "Pregled - ", "Kronika v zadnjih 24 urah")
+        ),
     ),
 ]
 
