@@ -9,7 +9,7 @@ async def generate_cluster_titles(article_lists: list[list[Article]]) -> list[st
     inputs = [
         "You are a professional Slovenian news editor. "
         + "Generate a descriptive and engaging collective title for the following news article titles. "
-        + "Write it in slovenian, output only a single title, don't include any other text or try to output markdown. Do not make the title uppercased.\n\n"
+        + "Write it in slovenian, output only a single title, don't include any other text or try to output markdown. Use natural capitalization (capitalize first letter only).\n\n"
         + "\n".join(
             article.title
             for article in sorted(articles[:5], key=lambda a: a.published_at, reverse=True)
