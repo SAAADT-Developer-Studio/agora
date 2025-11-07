@@ -45,6 +45,7 @@ class Article(Base):
     image_urls: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
     categories: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String))
     llm_rank: Mapped[Optional[int]] = mapped_column(Integer)
+    is_paywalled: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
     news_provider: Mapped["NewsProvider"] = relationship(

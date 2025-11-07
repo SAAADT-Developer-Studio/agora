@@ -87,6 +87,7 @@ async def process(
                 news_provider_key=article_metadata.provider_key,
                 image_urls=image_urls,
                 categories=article_analysis.categories[:3],
+                is_paywalled=article_analysis.is_paywalled,
             )
             pprint(article)
             articles.append(article)
@@ -131,6 +132,13 @@ class ArticleAnalysis(BaseModel):
         description="A short, general concept in English suitable for finding a relevant "
         "stock image. Avoid specific people, places, brands, or details. "
         "Example: 'business meeting', 'summer landscape', 'voting'."
+    )
+    is_paywalled: bool = Field(
+        description=(
+            "Whether access to the full article content requires payment. "
+            "Do not set to true if the article is temporarily unlocked, "
+            "fully visible, or just urges you to subscribe."
+        )
     )
 
 

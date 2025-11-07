@@ -7,6 +7,7 @@ from typing import Optional
 import logging
 from pydantic import BaseModel, Field
 from readability import parse
+import app.config as config
 
 
 @dataclass
@@ -47,6 +48,7 @@ class NewsProvider(ABC):
         rss_date_format: str = "%a, %d %b %Y %H:%M:%S %z",
         rank: int = 0,
         bias_rating: Optional[str] = None,
+        time_window: Optional[config.TimeDict] = None,  # how far back to process rss articles
     ):
         self.key = key
         self.name = name
@@ -55,6 +57,7 @@ class NewsProvider(ABC):
         self.rss_date_format = rss_date_format
         self.rank = rank
         self.bias_rating = bias_rating
+        self.time_window = time_window
 
     async def fetch_articles(self) -> list[ArticleMetadata]:
         articles: list[ArticleMetadata] = []

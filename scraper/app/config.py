@@ -1,7 +1,7 @@
 import os
 import dotenv
 from dataclasses import dataclass
-from typing import List
+from typing import List, TypedDict
 
 dotenv.load_dotenv()
 
@@ -17,7 +17,17 @@ def ensure_env_var(var_name: str) -> str:
     return value
 
 
-TIME_WINDOW = {
+class TimeDict(TypedDict, total=False):
+    days: float
+    seconds: float
+    microseconds: float
+    milliseconds: float
+    minutes: float
+    hours: float
+    weeks: float
+
+
+TIME_WINDOW: TimeDict = {
     "minutes": 20,
 }
 
