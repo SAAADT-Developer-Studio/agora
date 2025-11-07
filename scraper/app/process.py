@@ -137,7 +137,7 @@ class ArticleAnalysis(BaseModel):
         description=(
             "Whether access to the full article content requires payment. "
             "Do not set to true if the article is temporarily unlocked, "
-            "fully visible, or available without payment."
+            "fully visible, or just urges you to subscribe."
         )
     )
 
