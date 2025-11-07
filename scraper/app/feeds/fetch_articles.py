@@ -15,8 +15,9 @@ RETRY_ATTEMPTS = 2
 semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
 
-def is_recent(date: datetime) -> bool:
-    return date > datetime.now(date.tzinfo) - timedelta(**config.TIME_WINDOW)
+def is_recent(date: datetime, provider: NewsProvider) -> bool:
+    time_window = provider.time_window if provider.time_window else config.TIME_WINDOW
+    return date > datetime.now(date.tzinfo) - timedelta(**time_window)
 
 
 EXCLUSION_RULES: list[tuple[str, Callable[[ArticleMetadata], bool]]] = [
@@ -54,7 +55,7 @@ async def fetch(provider: NewsProvider):
         async with semaphore:
             logging.info(f"Fetching articles from {provider.key}...")
             articles = await provider.fetch_articles()
-            return [article for article in articles if is_recent(article.published_at)]
+            return [article for article in articles if is_recent(article.published_at, provider)]
     except Exception as e:
         logging.error(f"Error fetching articles from {provider.key}: {e}")
         raise e
