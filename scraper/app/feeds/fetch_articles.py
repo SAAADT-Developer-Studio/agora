@@ -23,7 +23,12 @@ EXCLUSION_RULES: list[tuple[str, Callable[[ArticleMetadata], bool]]] = [
     (
         ProviderKey.STA.value,
         lambda a: a.title.startswith(
-            ("Razmere na slovenskih cestah ob", "Pregled - ", "Kronika v zadnjih 24 urah")
+            (
+                "Razmere na slovenskih cestah ob",
+                "Pregled - ",
+                "Kronika v zadnjih 24 urah",
+                "Napoved - Slovenija",
+            )
         ),
     ),
 ]
@@ -45,10 +50,14 @@ def filter_out_useless_articles(articles: list[ArticleMetadata]) -> list[Article
     wait=wait_exponential(multiplier=1, min=1, max=10),
 )
 async def fetch(provider: NewsProvider):
-    async with semaphore:
-        logging.info(f"Fetching articles from {provider.key}...")
-        articles = await provider.fetch_articles()
-        return [article for article in articles if is_recent(article.published_at)]
+    try:
+        async with semaphore:
+            logging.info(f"Fetching articles from {provider.key}...")
+            articles = await provider.fetch_articles()
+            return [article for article in articles if is_recent(article.published_at)]
+    except Exception as e:
+        logging.error(f"Error fetching articles from {provider.key}: {e}")
+        raise e
 
 
 async def fetch_articles(provider_keys: list[str] | None = None):
