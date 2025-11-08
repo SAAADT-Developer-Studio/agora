@@ -10,6 +10,7 @@ from sqlalchemy import (
     Boolean,
     UniqueConstraint,
     Enum,
+    Index,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import (
@@ -67,6 +68,8 @@ class Article(Base):
         "ArticleSocialPost", back_populates="article", cascade="all, delete-orphan", init=False
     )
 
+    __table_args__ = (Index("ix_article_published_at", "published_at"),)
+
     def __repr__(self):
         return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
 
@@ -103,6 +106,8 @@ class ClusterRun(Base):
     clusters: Mapped[List["ClusterV2"]] = relationship(
         "ClusterV2", back_populates="run", init=False
     )
+
+    __table_args__ = (Index("ix_cluster_run_created_at", "created_at"),)
 
     def __repr__(self):
         return f"<ClusterRun(id={self.id}, created_at={self.created_at}, algo_version={self.algo_version}, is_production={self.is_production})>"
@@ -166,9 +171,10 @@ class ArticleCluster(Base):
     run: Mapped["ClusterRun"] = relationship("ClusterRun", init=False)
 
     __table_args__ = (
-        UniqueConstraint("article_id", "cluster_id", "run_id", name="uq_article_cluster_run"),
         # Enforce ≤1 primary assignment per article per run
         # via a partial unique index in Alembic (see migration).
+        UniqueConstraint("article_id", "cluster_id", "run_id", name="uq_article_cluster_run"),
+        Index("ix_article_cluster_cluster_id", "cluster_id"),
     )
 
     def __repr__(self):
