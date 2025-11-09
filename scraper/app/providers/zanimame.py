@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.enums import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 from bs4 import BeautifulSoup
 
 from app.utils.parse_description_image import parse_description_image
@@ -12,7 +12,7 @@ class ZanimaMeProvider(NewsProvider):
             name="Zanima.me",
             url="https://www.zanima.me",
             rss_feeds=["https://www.zanima.me/feed/"],
-            # bias_rating=BiasRating.RIGHT.value, # no idea
+            bias_rating=BiasRating.RIGHT.value,  # i guess?
         )
 
     def parse_rss_entry_image_urls(self, entry: dict) -> list[str]:
