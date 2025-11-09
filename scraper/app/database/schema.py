@@ -68,7 +68,9 @@ class Article(Base):
         "ArticleSocialPost", back_populates="article", cascade="all, delete-orphan", init=False
     )
 
-    __table_args__ = (Index("ix_article_published_at", "published_at"),)
+    __table_args__ = (
+        Index("ix_article_published_at_news_provider_key", "published_at", "news_provider_key"),
+    )
 
     def __repr__(self):
         return f"<Article(id={self.id}, url={self.url}, title={self.title})>"
