@@ -25,20 +25,20 @@ News providers TODO:
 - [x] [info360](https://info360.si/) https://info360.si//rss.xml
 - [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
 - [x] [domovina](https://www.domovina.je/) https://www.domovina.je/feed
+- [ ] [insajder](https://insajder.com/)
+- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [nadlani](nadlani.si) https://www.nadlani.si/feed/
 - [ ] [sobota info](https://sobotainfo.com/novice)
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [ ] [mariborinfo](https://mariborinfo.com/)
 - [ ] [ljubljanainfo](https://ljubljanainfo.com/novice)
-- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [pomurec](https://pomurec.com/)
 - [ ] [ptujinfo](https://ptujinfo.com/novice)
 - [ ] [obalaplus](https://obalaplus.si/)
 - [ ] [eposavje](https://www.eposavje.com/)
 - [ ] [študent](https://www.student.si/)
-- [ ] [zon](https://zon.si/) https://zon.si/feed/
-- [ ] [insajder](https://insajder.com/)
+- [ ] [zon](https://zon.si/) https://zon.si/feed/ // zasavske online novice
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
 - [ ] [vestnik](https://vestnik.svet24.si/novice)
 - [ ] [regional](https://www.regionalobala.si/)
@@ -57,7 +57,6 @@ News providers TODO:
 - [ ] [velenjcan](https://www.velenjcan.si)
 - [ ] [ptujinfo](https://ptujinfo.com)
 - [ ] [kamniške novice](https://www.kamnik.info/novice_kamnik/)
-- [ ] [zasavske online novice](https://zon.si)
 - [ ] [domžalske novice](https://www.domzalske-novice.si)
 - [ ] [škofje loške novice](https://loske-novice.si)
 - [ ] [lokalne goriške novice](https://www.robin.si/kategorija/lokalne-novice/)
