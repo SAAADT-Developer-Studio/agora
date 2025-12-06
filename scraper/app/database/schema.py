@@ -89,6 +89,9 @@ class NewsProvider(Base):
         "Article", back_populates="news_provider", init=False
     )
     votes: Mapped[List["Vote"]] = relationship("Vote", back_populates="news_provider", init=False)
+    moss_data: Mapped[List["MossData"]] = relationship(
+        "MossData", back_populates="provider", init=False
+    )
 
     def __repr__(self):
         return f"<NewsProvider(key={self.key}, name={self.name}, url={self.url}, rank={self.rank})>"
@@ -202,6 +205,31 @@ class Vote(Base):
 
     def __repr__(self):
         return f"<Vote(user_id={self.user_id}, provider_id={self.provider_id}, value={self.value})>"
+
+
+class MossData(Base):
+    __tablename__ = "moss_data"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
+    provider: Mapped["NewsProvider"] = relationship("NewsProvider", back_populates="moss_data", init=False)
+
+    rank: Mapped[int] = mapped_column(Integer)
+    website: Mapped[str] = mapped_column(String)
+    publisher: Mapped[str] = mapped_column(String)
+    reach: Mapped[int] = mapped_column(Integer)
+    reach_percent: Mapped[float] = mapped_column(Float)
+    avg_daily_reach: Mapped[int] = mapped_column(Integer)
+    views: Mapped[int] = mapped_column(Integer)
+    avg_session_duration: Mapped[str] = mapped_column(String)
+    trend: Mapped[float] = mapped_column(Float)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now, init=False
+    )
+
+    def __repr__(self):
+        return f"<MossData(id={self.id}, provider_key={self.provider_key}, website={self.website})>"
 
 
 class SocialPlatform(str, enum.Enum):
