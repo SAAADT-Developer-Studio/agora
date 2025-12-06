@@ -166,7 +166,7 @@ async def analyze_articles(
             "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
             "Then, categorize the article into at most 3 categories from this predefined list. Order them by relevance. \n"
             "Also provide a rank from 1 to 10 for the article, based on the significance of its content to a Slovenian, who is interested in politics, economics or crime.\n",
-            "Rank superflous content, like the horoscopes lower, and more important content, like controversial politics, crime, economics or anything with money higher.\n",
+            "Rank superflous content, like the horoscopes lower, and more important content, like controversial politics, crime, economics or local news higher.\n",
             f"{", ".join(category.key for category in config.CATEGORIES)} \n"
             f"Use only the provided categories, do not make up new ones.\n"
             f"Title: {article_metadata.title}\n"
