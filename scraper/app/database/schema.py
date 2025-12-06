@@ -155,6 +155,8 @@ class ClusterV2(Base):
         init=False,
     )
 
+    __table_args__ = (Index("ix_cluster_v2_run_id", "run_id"),)
+
     def __repr__(self):
         return f"<ClusterV2(id={self.id}, title={self.title}, slug={self.slug})>"
 
@@ -180,6 +182,7 @@ class ArticleCluster(Base):
         # via a partial unique index in Alembic (see migration).
         UniqueConstraint("article_id", "cluster_id", "run_id", name="uq_article_cluster_run"),
         Index("ix_article_cluster_cluster_id", "cluster_id"),
+        Index("ix_article_cluster_run_id", "run_id"),
     )
 
     def __repr__(self):
