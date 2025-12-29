@@ -15,7 +15,7 @@ class ArticleService:
     @staticmethod
     def filter_new_articles(article_urls: list[str], uow: UnitOfWork) -> set[str]:
         """Get URLs of articles that don't exist in the database."""
-        existing_urls = uow.articles.get_existing_urls(article_urls)
+        existing_urls = uow.articles.get_by_urls(article_urls)
         return set(article_urls) - existing_urls
 
     @staticmethod
@@ -45,7 +45,9 @@ class NewsProviderService:
 
             # Create new providers
             new_providers = [
-                NewsProvider(name=p.name, key=p.key, url=p.url, rank=p.rank)
+                NewsProvider(
+                    name=p.name, key=p.key, url=p.url, rank=p.rank, bias_rating=p.bias_rating
+                )
                 for p in new_providers_data
             ]
             if new_providers:
@@ -65,3 +67,4 @@ class NewsProviderService:
                         provider.name = provider_data.name
                         provider.url = provider_data.url
                         provider.rank = provider_data.rank
+                        provider.bias_rating = provider_data.bias_rating

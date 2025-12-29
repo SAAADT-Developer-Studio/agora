@@ -1,7 +1,7 @@
 import os
 import dotenv
 from dataclasses import dataclass
-from typing import List
+from typing import List, TypedDict
 
 dotenv.load_dotenv()
 
@@ -17,13 +17,24 @@ def ensure_env_var(var_name: str) -> str:
     return value
 
 
-TIME_WINDOW = {
+class TimeDict(TypedDict, total=False):
+    days: float
+    seconds: float
+    microseconds: float
+    milliseconds: float
+    minutes: float
+    hours: float
+    weeks: float
+
+
+TIME_WINDOW: TimeDict = {
     "minutes": 20,
 }
 
 APP_ENV = ensure_env_var("APP_ENV")
 GOOGLE_API_KEY = ensure_env_var("GOOGLE_API_KEY")
 DATABASE_URL = ensure_env_var("DATABASE_URL")
+PEXELS_API_KEY = ensure_env_var("PEXELS_API_KEY")
 
 
 @dataclass

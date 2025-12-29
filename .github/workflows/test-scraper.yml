@@ -41,6 +41,7 @@ jobs:
           GOOGLE_API_KEY: test_key_not_used_in_unit_tests
           DATABASE_URL: postgresql://test:test@localhost:5432/test_db
           OPENAI_API_KEY: test_key_not_used_in_unit_tests
+          PEXELS_API_KEY: test_key_not_used_in_unit_tests
 
       # TODO: Add coverage reporting when needed
       # TODO: Add test result artifacts when test suite grows

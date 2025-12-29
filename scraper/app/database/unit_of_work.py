@@ -7,7 +7,13 @@ from contextlib import contextmanager
 from typing import Generator
 from sqlalchemy.orm import Session
 from .schema import Session as SessionMaker
-from .repositories import ArticleRepository, NewsProviderRepository, ClusterRepository
+from .repositories import (
+    ArticleRepository,
+    NewsProviderRepository,
+    ClusterRepository,
+    ClusterRunRepository,
+    ClusterV2Repository,
+)
 
 
 class UnitOfWork:
@@ -21,6 +27,8 @@ class UnitOfWork:
         self._articles: ArticleRepository | None = None
         self._news_providers: NewsProviderRepository | None = None
         self._clusters: ClusterRepository | None = None
+        self._clusters_v2: ClusterV2Repository | None = None
+        self._cluster_runs: ClusterRunRepository | None = None
 
     @property
     def articles(self) -> ArticleRepository:
@@ -42,6 +50,20 @@ class UnitOfWork:
         if self._clusters is None:
             self._clusters = ClusterRepository(self.session)
         return self._clusters
+
+    @property
+    def clusters_v2(self) -> ClusterV2Repository:
+        """Get the cluster repository."""
+        if self._clusters_v2 is None:
+            self._clusters_v2 = ClusterV2Repository(self.session)
+        return self._clusters_v2
+
+    @property
+    def cluster_runs(self) -> ClusterRunRepository:
+        """Get the cluster_runs repository."""
+        if self._cluster_runs is None:
+            self._cluster_runs = ClusterRunRepository(self.session)
+        return self._cluster_runs
 
     @property
     def session(self) -> Session:

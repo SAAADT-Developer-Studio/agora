@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class PrimorskeNoviceProvider(NewsProvider):
@@ -8,5 +8,6 @@ class PrimorskeNoviceProvider(NewsProvider):
             key=ProviderKey.PRIMORSKENOVICE.value,
             name="Primorske Novice",
             url="https://primorske.svet24.si",
-            rss_feeds=["https://www.planet-tv.si/rss"],
+            rss_feeds=["https://primorske.svet24.si/rss.xml"],
+            bias_rating=BiasRating.CENTER_LEFT.value,
         )

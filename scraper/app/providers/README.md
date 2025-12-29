@@ -24,20 +24,21 @@ News providers TODO:
 - [x] [demokracija](https://demokracija.si/) https://demokracija.si/
 - [x] [info360](https://info360.si/) https://info360.si//rss.xml
 - [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
+- [x] [domovina](https://www.domovina.je/) https://www.domovina.je/feed
+- [ ] [insajder](https://insajder.com/)
+- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [nadlani](nadlani.si) https://www.nadlani.si/feed/
 - [ ] [sobota info](https://sobotainfo.com/novice)
 - [ ] [forbes.n1info](scraper/app/providers/forbes.n1info.py) https://forbes.n1info.si/
 - [ ] [mariborinfo](https://mariborinfo.com/)
 - [ ] [ljubljanainfo](https://ljubljanainfo.com/novice)
-- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [pomurec](https://pomurec.com/)
 - [ ] [ptujinfo](https://ptujinfo.com/novice)
 - [ ] [obalaplus](https://obalaplus.si/)
 - [ ] [eposavje](https://www.eposavje.com/)
 - [ ] [študent](https://www.student.si/)
-- [ ] [zon](https://zon.si/) https://zon.si/feed/
-- [ ] [insajder](https://insajder.com/)
+- [ ] [zon](https://zon.si/) https://zon.si/feed/ // zasavske online novice
 - [ ] [avto-magazin](https://avto-magazin.metropolitan.si/)
 - [ ] [vestnik](https://vestnik.svet24.si/novice)
 - [ ] [regional](https://www.regionalobala.si/)
@@ -47,7 +48,6 @@ News providers TODO:
 - [ ] [gorenjski glas](https://www.gorenjskiglas.si)
 - [ ] [ekipa24](https://ekipa.svet24.si)
 - [ ] [moja-dolenjska](https://moja-dolenjska.si/)
-- [ ] [domovina](https://www.domovina.je/)
 - [ ] [casnik](https://casnik.si)
 - [ ] [pozareport](https://pozareport.si)
 - [ ] [primorski dnevnik](https://www.primorski.eu)
@@ -57,7 +57,6 @@ News providers TODO:
 - [ ] [velenjcan](https://www.velenjcan.si)
 - [ ] [ptujinfo](https://ptujinfo.com)
 - [ ] [kamniške novice](https://www.kamnik.info/novice_kamnik/)
-- [ ] [zasavske online novice](https://zon.si)
 - [ ] [domžalske novice](https://www.domzalske-novice.si)
 - [ ] [škofje loške novice](https://loske-novice.si)
 - [ ] [lokalne goriške novice](https://www.robin.si/kategorija/lokalne-novice/)
@@ -77,6 +76,8 @@ A news site for all slovenian news sites: https://www.telex.si/viri.php
 
 Identify the RSS feed URL for the target website. This can typically be found by:
 
+This is a useful site for finding the url: https://lighthouseapp.io/tools/feed-finder
+
 - **Viewing Page Source:** Inspect the HTML source code for `<link>` tags with the following attributes:
   - `rel="alternate"`
   - `type="application/rss+xml"` or `type="application/atom+xml"`
@@ -92,10 +93,11 @@ from app.providers.news_provider import NewsProvider
 class DeloProvider(NewsProvider):
     def __init__(self):
         super().__init__(
-            key="delo",  # Unique key for the provider, used in the command line to run with specific providers
+            key=ProviderKey.DELO.value,  # Unique key for the provider, used in the command line to run with specific providers
             name="Delo",  # Display name of the provider
             url="https://www.delo.si",  # Base URL of the website
             rss_feeds=["https://www.delo.si/rss"],  # List of RSS feed URLs
+            bias_rating=BiasRating.LEFT.value,
         )
       # If website has no rss feed, implement fetching of new articles manually
     async def fetch_articles(self) -> list[ArticleMetadata]:
@@ -108,6 +110,10 @@ class DeloProvider(NewsProvider):
 ### 4. Assign a rank to the provider in [ranks.py](/scraper/app/providers/ranks.py)
 
 ### 5. Find the provider logo, resize if needed to get 1x1 aspect ratio.
+
+You can usually find it in the site manifest in the <head> tag.
+
+<link rel="manifest" href="https://www.domovina.je/assets/site.webmanifest">
 
 ```bash
 # Store logo  in /data/logos_source and run

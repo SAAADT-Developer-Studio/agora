@@ -13,7 +13,16 @@ test-verbose:
 	uv run pytest -v
 
 sync-images:
-	uv run python3 scripts/sync_images.py
+	uv run python3 -m scripts.sync_images_script
+
+bootstrap-cluster-run:
+	uv run python3 -m scripts.bootstrap_cluster_run_script
+
+migrate-clusters:
+	uv run python3 -m scripts.migrate_clusters_script
+
+run-clustering:
+	uv run python3 -m scripts.run_clustering_script
 
 # TODO: Add lint, format, type-check targets
 # TODO: Add test-watch target for development

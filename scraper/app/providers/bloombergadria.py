@@ -1,5 +1,5 @@
 from app.providers.news_provider import NewsProvider
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey, BiasRating
 
 
 class BloombergAdriaProvider(NewsProvider):
@@ -15,4 +15,5 @@ class BloombergAdriaProvider(NewsProvider):
                 "https://si.bloombergadria.com/rss/financni-trgi",
                 "https://si.bloombergadria.com/rss/analiza",
             ],
+            bias_rating=BiasRating.CENTER_RIGHT.value,
         )

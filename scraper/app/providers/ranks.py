@@ -1,4 +1,4 @@
-from app.providers.keys import ProviderKey
+from app.providers.enums import ProviderKey
 from app.providers.providers import NewsProvider
 
 RANKS: dict[int, list[ProviderKey]] = {
@@ -24,11 +24,13 @@ RANKS: dict[int, list[ProviderKey]] = {
         ProviderKey.NECENZURIRANO,
         ProviderKey.NOVA24TV,
         ProviderKey.DEMOKRACIJA,
+        ProviderKey.DOMOVINA,
         ProviderKey.CEKIN,
         ProviderKey.INFO360,
     ],
     3: [
         ProviderKey.BLOOMBERGADRIA,
+        ProviderKey.ZANIMAME,
         ProviderKey.LJUBLJANSKENOVICE,
         ProviderKey.PRIMORSKENOVICE,
     ],

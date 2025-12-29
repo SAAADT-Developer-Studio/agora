@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 import logging
+from pydantic import BaseModel, Field
+from readability import parse
+import app.config as config
 
 
 @dataclass
@@ -14,9 +17,23 @@ class ArticleMetadata:
     link: str
     provider_key: str
     image_urls: list[str]
+    title: str
     published_at: datetime = field(default_factory=datetime.now)
-    title: Optional[str] = None
     summary: Optional[str] = None
+
+
+class ExtractedArticle(BaseModel):
+    """Class representing an article with its attributes."""
+
+    url: str = Field(description="URL of the article")
+    title: str = Field(description="Title of the article")
+    author: str | None = Field(description="Author of the article", default=None)
+    deck: str = Field(description="Deck of the article, a summary or brief description")
+    content: str = Field(description="Full content of the article")
+    published_at: str | None = Field(
+        description="Date when the article was published", default=None
+    )
+    image_urls: list[str] = Field(description="List of image URLs in the article", default=[])
 
 
 class NewsProvider(ABC):
@@ -30,6 +47,8 @@ class NewsProvider(ABC):
         rss_feeds: list[str],
         rss_date_format: str = "%a, %d %b %Y %H:%M:%S %z",
         rank: int = 0,
+        bias_rating: Optional[str] = None,
+        time_window: Optional[config.TimeDict] = None,  # how far back to process rss articles
     ):
         self.key = key
         self.name = name
@@ -37,14 +56,10 @@ class NewsProvider(ABC):
         self.rss_feeds = rss_feeds
         self.rss_date_format = rss_date_format
         self.rank = rank
+        self.bias_rating = bias_rating
+        self.time_window = time_window
 
     async def fetch_articles(self) -> list[ArticleMetadata]:
-        """
-        Fetch articles from the provider's RSS feed.
-
-        Returns:
-            A list of article metadata.
-        """
         articles: list[ArticleMetadata] = []
         async with httpx.AsyncClient() as client:
             for feed_url in self.rss_feeds:
@@ -72,27 +87,63 @@ class NewsProvider(ABC):
         if "published" in entry:
             date = datetime.strptime(entry["published"], self.rss_date_format)
         entry["summary"] = entry.get("summary")
-        image_urls = [enclosure["href"] for enclosure in entry.get("enclosures", [])]
+        image_urls = []
+        try:
+            image_urls = self.parse_rss_entry_image_urls(entry)
+        except Exception as e:
+            logging.error(f"Error extracting image URLs for {self.name}: {e}")
 
         return ArticleMetadata(
             title=entry["title"],
-            link=self.get_link(entry["link"]),
+            link=self.get_link(entry["link"]).rstrip("/"),
             published_at=date,
             summary=entry["summary"],
             provider_key=self.key,
             image_urls=image_urls,
         )
 
+    def parse_rss_entry_image_urls(self, entry: dict) -> list[str]:
+        return [enclosure["href"] for enclosure in entry.get("enclosures", [])]
+
     def get_link(self, link: str) -> str:
-        """
-        Get the full link for an article.
-
-        Args:
-            link: The relative or absolute link to the article.
-
-        Returns:
-            The full URL of the article.
-        """
         if link.startswith("http"):
             return link
         return f"{self.url}{link}"
+
+    async def fetch_article_html(self, url: str) -> str:
+        async with httpx.AsyncClient() as client:
+            client.follow_redirects = True
+            # set user agent to avoid cloudflare blocking user agent
+            client.headers["User-Agent"] = (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+            )
+
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.text
+
+    def extract_article_from_html(self, html: str, url: str) -> ExtractedArticle:
+        doc = parse(html)
+
+        image_urls = []
+        try:
+            image_urls = self.extract_image_urls_from_html(html)
+        except Exception as e:
+            logging.error(f"Error extracting image URLs from article HTML: {e}")
+
+        return ExtractedArticle(
+            title=doc.title,
+            deck=doc.excerpt,
+            content=doc.text_content,
+            author=doc.byline,
+            url=url,
+            published_at=doc.published_time,
+            image_urls=image_urls,
+        )
+
+    def extract_image_urls_from_html(self, html: str) -> list[str]:
+        return []
+
+    async def extract_article(self, url: str) -> ExtractedArticle:
+        html = await self.fetch_article_html(url)
+        return self.extract_article_from_html(html, url)
