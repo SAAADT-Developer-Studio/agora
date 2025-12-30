@@ -1,16 +1,17 @@
 services:
   scraper:
-    build: .
+    image: ${DOCKER_HUB_USERNAME}/vidik-scraper:${DOCKER_IMAGE_TAG:-latest}
+    container_name: scraper
     environment:
       APP_ENV: ${APP_ENV}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       DATABASE_URL: ${DATABASE_URL}
-  # TODO: refactor ansible script
-  # https://medium.com/@yellalena/send-node-js-logs-from-docker-to-grafana-cloud-with-alloy-d33c51acf60b
+
   alloy:
     image: grafana/alloy:latest
     container_name: alloy
+    restart: unless-stopped
     ports:
       - "12345:12345"
     volumes:
