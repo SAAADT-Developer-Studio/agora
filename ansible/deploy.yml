@@ -1,5 +1,6 @@
+# ansible/deploy.yml
 ---
-- name: Deploy Scraper Stack to Hetzner VM
+- name: Deploy Docker image to Hetzner VM
   hosts: hetzner_vms
   become: true
 
@@ -8,20 +9,11 @@
     docker_image_tag: "{{ lookup('env', 'DOCKER_IMAGE_TAG') }}"
     docker_hub_username: "{{ lookup('env', 'DOCKER_HUB_USERNAME') }}"
     docker_hub_token: "{{ lookup('env', 'DOCKER_HUB_TOKEN') }}"
-    project_dir: /opt/scraper
     app_secrets:
-      # Docker image configuration
-      DOCKER_HUB_USERNAME: "{{ docker_hub_username }}"
-      DOCKER_IMAGE_TAG: "{{ docker_image_tag }}"
-      # App configuration
-      APP_ENV: production
       GOOGLE_API_KEY: "{{ lookup('env', 'GOOGLE_API_KEY') }}"
       DATABASE_URL: "{{ lookup('env', 'DATABASE_URL') }}"
       PEXELS_API_KEY: "{{ lookup('env', 'PEXELS_API_KEY') }}"
-      # Grafana Alloy configuration
-      GRAFANA_LOKI_URL: "{{ lookup('env', 'GRAFANA_LOKI_URL') }}"
-      GRAFANA_LOKI_USERNAME: "{{ lookup('env', 'GRAFANA_LOKI_USERNAME') }}"
-      GRAFANA_CLOUD_API_KEY: "{{ lookup('env', 'GRAFANA_CLOUD_API_KEY') }}"
+      APP_ENV: production
 
   tasks:
     - name: Ensure Docker login
@@ -30,75 +22,70 @@
         password: "{{ docker_hub_token }}"
       no_log: true
 
-    - name: Create project directory
-      ansible.builtin.file:
-        path: "{{ project_dir }}"
+    - name: Define full image name
+      ansible.builtin.set_fact:
+        full_image_name: "{{ docker_hub_username }}/{{ docker_image_name }}:{{ docker_image_tag }}"
+
+    - name: Create temporary directory for env file
+      ansible.builtin.tempfile:
         state: directory
-        mode: "0755"
+        suffix: "docker_env"
+      register: temp_env_dir
 
-    - name: Copy docker-compose.yml to server
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../scraper/docker-compose.yml"
-        dest: "{{ project_dir }}/docker-compose.yml"
-        mode: "0644"
-
-    - name: Copy config.alloy to server
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../scraper/config.alloy"
-        dest: "{{ project_dir }}/config.alloy"
-        mode: "0644"
-
-    - name: Create .env file with secrets
+    - name: Create .env file with secrets on target VM
       ansible.builtin.copy:
         content: |
           {% for key, value in app_secrets.items() %}
           {{ key }}={{ value }}
           {% endfor %}
-        dest: "{{ project_dir }}/.env"
-        mode: "0600"
-      no_log: true
+        dest: "{{ temp_env_dir.path }}/.env"
+        mode: "0600" # Only owner can read/write
+      no_log: true # Very important to prevent secrets in logs
 
-    - name: Pull latest images
-      ansible.builtin.command:
-        cmd: docker compose pull
-        chdir: "{{ project_dir }}"
-      register: pull_result
-      changed_when: "'Downloaded' in pull_result.stdout or 'Pull complete' in pull_result.stdout"
+    - name: Stop and remove old container if it exists
+      community.docker.docker_container:
+        name: "{{ docker_image_name }}-container"
+        state: absent
+      ignore_errors: true
 
-    - name: Start docker-compose stack
-      ansible.builtin.command:
-        cmd: docker compose up -d --remove-orphans
-        chdir: "{{ project_dir }}"
-      register: compose_result
-      changed_when: "'Started' in compose_result.stderr or 'Creating' in compose_result.stderr"
+    - name: Pull new Docker image
+      community.docker.docker_image:
+        name: "{{ full_image_name }}"
+        source: pull
+        state: present
 
-    - name: Wait for containers to be healthy
-      ansible.builtin.pause:
-        seconds: 5
-
-    - name: Verify scraper container is running
-      community.docker.docker_container_info:
-        name: scraper
-      register: scraper_info
-
-    - name: Verify alloy container is running
-      community.docker.docker_container_info:
-        name: alloy
-      register: alloy_info
-
-    - name: Fail if scraper container is not running
-      ansible.builtin.fail:
-        msg: "Scraper container is not running or has crashed."
-      when: scraper_info.container.State.Status != "running"
-
-    - name: Fail if alloy container is not running
-      ansible.builtin.fail:
-        msg: "Alloy container is not running or has crashed."
-      when: alloy_info.container.State.Status != "running"
-
-    - name: Remove dangling images to save space
+    - name: Remove dangling images (optional, to save space)
       community.docker.docker_prune:
         containers: false
         images: true
         networks: false
         volumes: false
+
+    - name: Debug Docker image reference
+      ansible.builtin.debug:
+        msg: "Docker image reference: {{ full_image_name }}"
+
+    - name: Run new Docker container with environment variables from .env file
+      community.docker.docker_container:
+        name: "{{ docker_image_name }}-container"
+        image: "{{ full_image_name }}"
+        state: started
+        recreate: yes
+        env_file: "{{ temp_env_dir.path }}/.env"
+        restart_policy: unless-stopped
+
+    - name: Check if Docker container is running
+      community.docker.docker_container_info:
+        name: "{{ docker_image_name }}-container"
+      register: container_info
+
+    - name: Fail if container is not running
+      ansible.builtin.fail:
+        msg: "Container {{ docker_image_name }}-container is not running or has crashed."
+      when: container_info.container.State.Status != "running"
+
+    - name: Clean up temporary env directory
+      ansible.builtin.file:
+        path: "{{ temp_env_dir.path }}"
+        state: absent
+      when: temp_env_dir.path is defined
