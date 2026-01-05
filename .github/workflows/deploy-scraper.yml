@@ -82,4 +82,6 @@ jobs:
           # Grafana Alloy secrets
           GRAFANA_LOKI_URL: ${{ secrets.GRAFANA_LOKI_URL }}
           GRAFANA_LOKI_USERNAME: ${{ secrets.GRAFANA_LOKI_USERNAME }}
+          GRAFANA_PROMETHEUS_URL: ${{ secrets.GRAFANA_PROMETHEUS_URL }}
+          GRAFANA_PROMETHEUS_USERNAME: ${{ secrets.GRAFANA_PROMETHEUS_USERNAME }}
           GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}

@@ -12,20 +12,25 @@ services:
     image: grafana/alloy:latest
     container_name: alloy
     restart: unless-stopped
+    privileged: true
     ports:
       - "12345:12345"
     volumes:
-      # mount config file
       - "./config.alloy:/etc/alloy/config.alloy"
-      # give access to running docker containers for discovery.docker
       - /var/run/docker.sock:/var/run/docker.sock
-      # give access to docker's log files directory (optional)
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Required for node_exporter integration (OS metrics)
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
     environment:
-      # pass environment variables for config.alloy
       GRAFANA_LOKI_URL: ${GRAFANA_LOKI_URL}
       GRAFANA_LOKI_USERNAME: ${GRAFANA_LOKI_USERNAME}
       GRAFANA_CLOUD_API_KEY: ${GRAFANA_CLOUD_API_KEY}
+      GRAFANA_PROMETHEUS_URL: ${GRAFANA_PROMETHEUS_URL}
+      GRAFANA_PROMETHEUS_USERNAME: ${GRAFANA_PROMETHEUS_USERNAME}
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
