@@ -32,3 +32,39 @@ loki.write "cloud" {
     }
   }
 }
+
+// Step 5. Collect Docker container metrics (built-in cAdvisor-style metrics).
+prometheus.exporter.cadvisor "docker" {
+  docker_host = "unix:///var/run/docker.sock"
+  storage_duration = "5m"
+}
+
+prometheus.scrape "cadvisor" {
+  targets    = prometheus.exporter.cadvisor.docker.targets
+  forward_to = [prometheus.remote_write.cloud.receiver]
+  scrape_interval = "15s"
+}
+
+// Step 6. Collect OS-level metrics (built-in node_exporter-style metrics).
+prometheus.exporter.unix "node" {
+  set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "netdev", "uname"]
+  rootfs_path = "/rootfs"
+}
+
+prometheus.scrape "node" {
+  targets    = prometheus.exporter.unix.node.targets
+  forward_to = [prometheus.remote_write.cloud.receiver]
+  scrape_interval = "15s"
+}
+
+// Step 7. Send metrics to Grafana Cloud Prometheus.
+prometheus.remote_write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_PROMETHEUS_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_PROMETHEUS_USERNAME")
+      password = sys.env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+}
+

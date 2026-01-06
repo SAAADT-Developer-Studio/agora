@@ -21,6 +21,8 @@
       # Grafana Alloy configuration
       GRAFANA_LOKI_URL: "{{ lookup('env', 'GRAFANA_LOKI_URL') }}"
       GRAFANA_LOKI_USERNAME: "{{ lookup('env', 'GRAFANA_LOKI_USERNAME') }}"
+      GRAFANA_PROMETHEUS_URL: "{{ lookup('env', 'GRAFANA_PROMETHEUS_URL') }}"
+      GRAFANA_PROMETHEUS_USERNAME: "{{ lookup('env', 'GRAFANA_PROMETHEUS_USERNAME') }}"
       GRAFANA_CLOUD_API_KEY: "{{ lookup('env', 'GRAFANA_CLOUD_API_KEY') }}"
 
   tasks:
@@ -100,5 +102,7 @@
       community.docker.docker_prune:
         containers: false
         images: true
+        images_filters:
+          dangling: false
         networks: false
         volumes: false
