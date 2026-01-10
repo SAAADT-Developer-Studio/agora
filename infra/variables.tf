@@ -37,3 +37,33 @@ variable "aws_region" {
   description = "AWS region"
   default     = "eu-central-1"
 }
+
+# Grafana Cloud Variables
+variable "grafana_url" {
+  type        = string
+  description = "Grafana Cloud instance URL (e.g., https://your-org.grafana.net)"
+}
+
+variable "grafana_service_account_token" {
+  type        = string
+  description = "Grafana Cloud Service Account Token for Terraform"
+  sensitive   = true
+}
+
+variable "grafana_loki_datasource_uid" {
+  type        = string
+  description = "UID of the Loki datasource in Grafana Cloud"
+}
+
+# Slack Variables
+variable "slack_webhook_url" {
+  type        = string
+  description = "Slack webhook URL for sending alerts"
+  sensitive   = true
+}
+
+variable "slack_channel" {
+  type        = string
+  description = "Slack channel to send alerts to (e.g., #alerts)"
+  default     = "#alerts"
+}
