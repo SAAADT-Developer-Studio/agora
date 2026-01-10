@@ -1,6 +1,7 @@
 import asyncio
 import time
 import logging
+from typing import cast
 from langchain_core.embeddings import Embeddings
 from langchain.chat_models import init_chat_model
 from pprint import pprint
@@ -17,6 +18,7 @@ from app.utils.concurrency import run_concurrently_with_limit
 from app.utils.pexels import search_pexels_image
 from app.clusterer.run_clustering import run_clustering
 from app import config
+from langchain_core.language_models import LanguageModelInput
 
 
 async def process(
@@ -44,7 +46,7 @@ async def process(
             extract_article(article_metadata, providers_map[article_metadata.provider_key])
             for article_metadata in new_article_metadatas
         ]
-        extracted_articles, _ = await run_concurrently_with_limit(tasks, limit=3)
+        extracted_articles, _ = await run_concurrently_with_limit(tasks, limit=4)
 
         article_analyses = await analyze_articles(new_article_metadatas, extracted_articles)
 
@@ -148,7 +150,7 @@ async def analyze_articles(
     base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     model = base_model.with_structured_output(ArticleAnalysis)
 
-    inputs = []
+    inputs: list[LanguageModelInput] = []
     for article_metadata, extracted_article in zip(article_metadatas, extracted_articles):
         summary = f"Summary: {article_metadata.summary}" if article_metadata.summary else ""
         deck = (
@@ -161,23 +163,24 @@ async def analyze_articles(
             if extracted_article and extracted_article.content
             else ""
         )
-        prompt = (
+        prompt: str = (
             "You are a professional Slovenian journalist.\n"
             "Write a concise summary (max 3 sentences) of the following article in Slovenian.\n"
             "Then, categorize the article into at most 3 categories from this predefined list. Order them by relevance. \n"
-            "Also provide a rank from 1 to 10 for the article, based on the significance of its content to a Slovenian, who is interested in politics, economics or crime.\n",
-            "Rank superflous content, like the horoscopes lower, and more important content, like controversial politics, crime, economics or local news higher.\n",
+            "Also provide a rank from 1 to 10 for the article, based on the significance of its content to a Slovenian, who is interested in politics, economics or crime.\n"
+            "Rank superflous content, like the horoscopes lower, and more important content, like controversial politics, crime, economics or local news higher.\n"
             f"{", ".join(category.key for category in config.CATEGORIES)} \n"
             f"Use only the provided categories, do not make up new ones.\n"
             f"Title: {article_metadata.title}\n"
             f"Published at: {article_metadata.published_at}\n"
             f"{summary}\n"
             f"{deck}\n"
-            f"{content}",
+            f"{content}"
         )
         inputs.append(prompt)
     results = await model.abatch(inputs=inputs)
-    return results
+    # results = await model.abatch(inputs=inputs, return_exceptions=True)
+    return cast(list[ArticleAnalysis], results)
 
 
 async def generate_embeddings(
