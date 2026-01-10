@@ -32,6 +32,5 @@ async def generate_cluster_titles(
         else:
             # exception
             titles.append(articles[0].title)
-            # TODO: log exception
             logging.warning(f"Failed to generate title for {len(articles)} articles: {result}")
     return titles
