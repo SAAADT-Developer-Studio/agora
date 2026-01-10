@@ -7,6 +7,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.database.services import NewsProviderService
 from app.pipeline import process
 from app.providers.providers import PROVIDERS
+from app import config
 
 import httpx
 
@@ -60,6 +61,9 @@ async def run(providers: list[str] | None = None) -> asyncio.Task:
 
 
 async def populate_cache() -> None:
+    if config.APP_ENV == "development":
+        logging.info("Skipping cache population in development environment")
+        return
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post("https://vidik.si/api/populate-cache")
