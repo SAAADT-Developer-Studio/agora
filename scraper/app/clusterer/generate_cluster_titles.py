@@ -1,13 +1,14 @@
 from app.database.schema import Article
-from langchain.chat_models import init_chat_model
+from langchain.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 import logging
 from typing import Sequence
 
 
-async def generate_cluster_titles(article_lists: list[list[Article]]) -> list[str]:
+async def generate_cluster_titles(
+    article_lists: list[list[Article]], base_model: BaseChatModel
+) -> list[str]:
     # TODO: don't generate titles for clusters with only 1 article
-    base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     model = base_model | StrOutputParser()
 
     inputs: list[str] = [

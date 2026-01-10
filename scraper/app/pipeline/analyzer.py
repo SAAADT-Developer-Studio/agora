@@ -1,6 +1,6 @@
 from typing import cast
 from langchain_core.embeddings import Embeddings
-from langchain.chat_models import init_chat_model
+from langchain.chat_models import BaseChatModel
 from pydantic import BaseModel, Field
 from langchain_core.language_models import LanguageModelInput
 
@@ -31,9 +31,10 @@ class ArticleAnalysis(BaseModel):
 
 
 async def analyze_articles(
-    article_metadatas: list[ArticleMetadata], extracted_articles: list[ExtractedArticle | None]
+    article_metadatas: list[ArticleMetadata],
+    extracted_articles: list[ExtractedArticle | None],
+    base_model: BaseChatModel,
 ) -> list[ArticleAnalysis]:
-    base_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
     model = base_model.with_structured_output(ArticleAnalysis)
 
     inputs: list[LanguageModelInput] = []

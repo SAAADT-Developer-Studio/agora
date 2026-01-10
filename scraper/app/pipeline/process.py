@@ -2,6 +2,7 @@ import asyncio
 import time
 import logging
 from langchain_core.embeddings import Embeddings
+from langchain.chat_models import BaseChatModel
 from pprint import pprint
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -23,7 +24,9 @@ from app.clusterer.run_clustering import run_clustering
 async def process(
     providers: list[str] | None,
     embeddings: Embeddings,
+    analysis_model: BaseChatModel,
 ):
+
     start_time = time.perf_counter()
     article_metadatas = await discover_articles(providers)
 
@@ -47,7 +50,9 @@ async def process(
         ]
         extracted_articles, _ = await run_concurrently_with_limit(tasks, limit=4)
 
-        article_analyses = await analyze_articles(new_article_metadatas, extracted_articles)
+        article_analyses = await analyze_articles(
+            new_article_metadatas, extracted_articles, analysis_model
+        )
 
         articles_embeddings, stock_image_urls = await asyncio.gather(
             generate_embeddings(new_article_metadatas, article_analyses, embeddings),
@@ -98,7 +103,7 @@ async def process(
         uow.commit()
         uow.session.flush()
 
-        await run_clustering(uow)
+        await run_clustering(uow, analysis_model)
 
         end_time = time.perf_counter()
         logging.info(

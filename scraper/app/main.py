@@ -2,6 +2,7 @@ import asyncio
 import dotenv
 import logging
 import argparse
+from langchain.chat_models import init_chat_model
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.database.services import NewsProviderService
@@ -50,10 +51,12 @@ async def main() -> None:
 
 async def run(providers: list[str] | None = None) -> asyncio.Task:
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    analysis_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
 
     await process(
         providers=providers,
         embeddings=embeddings,
+        analysis_model=analysis_model,
     )
 
     # Populate cache after processing - non-blocking with error handling
