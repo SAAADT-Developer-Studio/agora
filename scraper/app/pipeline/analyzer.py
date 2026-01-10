@@ -1,4 +1,3 @@
-from typing import cast
 from langchain_core.embeddings import Embeddings
 from langchain.chat_models import BaseChatModel
 from pydantic import BaseModel, Field
@@ -34,7 +33,7 @@ async def analyze_articles(
     article_metadatas: list[ArticleMetadata],
     extracted_articles: list[ExtractedArticle | None],
     base_model: BaseChatModel,
-) -> list[ArticleAnalysis]:
+) -> list[ArticleAnalysis | None]:
     model = base_model.with_structured_output(ArticleAnalysis)
 
     inputs: list[LanguageModelInput] = []
@@ -65,8 +64,8 @@ async def analyze_articles(
             f"{content}"
         )
         inputs.append(prompt)
-    results = await model.abatch(inputs=inputs)
-    return cast(list[ArticleAnalysis], results)
+    results = await model.abatch(inputs=inputs, return_exceptions=True)
+    return [r if isinstance(r, ArticleAnalysis) else None for r in results]
 
 
 async def generate_embeddings(

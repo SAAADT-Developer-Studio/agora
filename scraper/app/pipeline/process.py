@@ -1,6 +1,7 @@
 import asyncio
 import time
 import logging
+from typing import cast
 from langchain_core.embeddings import Embeddings
 from langchain.chat_models import BaseChatModel
 from pprint import pprint
@@ -10,6 +11,7 @@ from app.pipeline.discover_articles import discover_articles
 from app.pipeline.analyzer import (
     analyze_articles,
     generate_embeddings,
+    ArticleAnalysis,
 )
 from app.pipeline.images import search_stock_images
 from app.providers.news_provider import ExtractedArticle, ArticleMetadata, NewsProvider
@@ -54,9 +56,16 @@ async def process(
             new_article_metadatas, extracted_articles, analysis_model
         )
 
+        # Filter to successful articles
+        successful_indices = [i for i, a in enumerate(article_analyses) if a is not None]
+
+        s_metadatas = [new_article_metadatas[i] for i in successful_indices]
+        s_extracted = [extracted_articles[i] for i in successful_indices]
+        s_analyses = cast(list[ArticleAnalysis], [article_analyses[i] for i in successful_indices])
+
         articles_embeddings, stock_image_urls = await asyncio.gather(
-            generate_embeddings(new_article_metadatas, article_analyses, embeddings),
-            search_stock_images(new_article_metadatas, extracted_articles, article_analyses),
+            generate_embeddings(s_metadatas, s_analyses, embeddings),
+            search_stock_images(s_metadatas, s_extracted, s_analyses),
         )
 
         articles: list[Article] = []
@@ -67,9 +76,9 @@ async def process(
             embedding,
             stock_image_url,
         ) in zip(
-            new_article_metadatas,
-            extracted_articles,
-            article_analyses,
+            s_metadatas,
+            s_extracted,
+            s_analyses,
             articles_embeddings,
             stock_image_urls,
         ):
@@ -97,7 +106,7 @@ async def process(
             )
             pprint(article)
             articles.append(article)
-        # TODO: error handling
+
         ArticleService.bulk_create_articles(articles, uow)
 
         uow.commit()

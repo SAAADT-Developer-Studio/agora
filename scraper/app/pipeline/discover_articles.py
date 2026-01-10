@@ -12,7 +12,6 @@ from app.providers.enums import ProviderKey
 CONCURRENCY_LIMIT = 5
 RETRY_ATTEMPTS = 2
 
-# TODO: shouldnt be global (find out why?)
 semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
 
