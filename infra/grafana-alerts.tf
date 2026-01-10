@@ -11,7 +11,7 @@ resource "grafana_contact_point" "slack_alerts" {
 
   slack {
     url                     = var.slack_webhook_url
-    title                   = "Agora Scraper Alert"
+    title                   = "Vidik Scraper Alert"
     text                    = <<-EOT
       {{ if gt (len .Alerts.Firing) 0 }}
       🚨 **FIRING ALERTS** ({{ len .Alerts.Firing }})
