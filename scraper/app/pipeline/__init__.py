@@ -1,0 +1,3 @@
+from app.pipeline.process import process
+
+__all__ = ["process"]

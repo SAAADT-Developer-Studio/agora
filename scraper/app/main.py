@@ -2,11 +2,13 @@ import asyncio
 import dotenv
 import logging
 import argparse
+from langchain.chat_models import init_chat_model
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.database.services import NewsProviderService
-from app.process import process
+from app.pipeline import process
 from app.providers.providers import PROVIDERS
+from app import config
 
 import httpx
 
@@ -49,10 +51,12 @@ async def main() -> None:
 
 async def run(providers: list[str] | None = None) -> asyncio.Task:
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    analysis_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
 
     await process(
         providers=providers,
         embeddings=embeddings,
+        analysis_model=analysis_model,
     )
 
     # Populate cache after processing - non-blocking with error handling
@@ -60,6 +64,9 @@ async def run(providers: list[str] | None = None) -> asyncio.Task:
 
 
 async def populate_cache() -> None:
+    if config.APP_ENV == "development":
+        logging.info("Skipping cache population in development environment")
+        return
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post("https://vidik.si/api/populate-cache")

@@ -61,7 +61,8 @@ async def fetch(provider: NewsProvider):
         raise e
 
 
-async def fetch_articles(provider_keys: list[str] | None = None):
+async def discover_articles(provider_keys: list[str] | None = None):
+    """Discover new articles by fetching rss feeds (or custom implementations) from all providers"""
     providers_map = {provider.key: provider for provider in PROVIDERS}
 
     if not provider_keys:

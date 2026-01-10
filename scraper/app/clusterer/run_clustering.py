@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.clusterer.cluster import cluster
 from app.clusterer.hash_cluster import hash_cluster
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
+from langchain.chat_models import BaseChatModel
 import heapq
 import itertools
 import logging
@@ -33,7 +34,7 @@ def filter_old_clusters(clusters: Sequence[ClusterV2], days: int = 3) -> Sequenc
     return filtered_clusters
 
 
-async def run_clustering(uow: UnitOfWork):
+async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
     prev_run = uow.cluster_runs.get_latest()
     if prev_run is None:
         raise Exception("No previous cluster run found. Something is very wrong.")
@@ -88,7 +89,7 @@ async def run_clustering(uow: UnitOfWork):
         else:
             clusters_pending_title_generation.append(cluster_articles)
 
-    generated_titles = await generate_cluster_titles(clusters_pending_title_generation)
+    generated_titles = await generate_cluster_titles(clusters_pending_title_generation, model)
 
     final.extend(zip(generated_titles, clusters_pending_title_generation))
     new_clusters: list[ClusterV2] = []
