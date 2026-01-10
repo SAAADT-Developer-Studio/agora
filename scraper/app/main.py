@@ -5,7 +5,7 @@ import argparse
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.database.services import NewsProviderService
-from app.process import process
+from app.pipeline import process
 from app.providers.providers import PROVIDERS
 
 import httpx
