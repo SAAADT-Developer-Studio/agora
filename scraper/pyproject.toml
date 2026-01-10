@@ -67,3 +67,6 @@ markers = [
 ]
 # TODO: Add coverage options when needed: "--cov=app", "--cov-report=term-missing"
 # TODO: Add parallel execution when test suite grows: "-n auto" (requires pytest-xdist)
+
+[tool.pyright]
+include = ["app"]
