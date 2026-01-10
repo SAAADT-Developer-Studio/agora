@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app import config
@@ -46,6 +46,20 @@ def filter_out_useless_articles(articles: list[ArticleMetadata]) -> list[Article
     ]
 
 
+def fix_future_dates(articles: list[ArticleMetadata]) -> list[ArticleMetadata]:
+    now = datetime.now(timezone.utc)
+    for article in articles:
+        if article.published_at.timestamp() > now.timestamp():
+            article.published_at = now
+    return articles
+
+
+def process_articles(articles: list[ArticleMetadata]) -> list[ArticleMetadata]:
+    articles = filter_out_useless_articles(articles)
+    articles = fix_future_dates(articles)
+    return articles
+
+
 @retry(
     stop=stop_after_attempt(RETRY_ATTEMPTS),
     wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -79,4 +93,4 @@ async def discover_articles(provider_keys: list[str] | None = None):
             successes.extend(result)
             logging.info(f"Fetched {len(result)} articles from {provider_key}")
 
-    return filter_out_useless_articles(successes)
+    return process_articles(successes)
