@@ -1,0 +1,23 @@
+# Hetzner Cloud
+hcloud_token = "your-hetzner-token-here"
+
+# DigitalOcean
+digitalocean_token = "your-digitalocean-token-here"
+
+# Cloudflare
+cf_account_id = "your-cloudflare-account-id"
+cf_zone_id    = "your-cloudflare-zone-id"
+cf_email      = "your-cloudflare-email"
+cf_api_token  = "your-cloudflare-api-token"
+
+# AWS
+aws_region = "eu-central-1"
+
+# Grafana Cloud
+grafana_url                   = "https://your-org.grafana.net"
+grafana_service_account_token = "glsa_xxxxxxxxxxxxxxxxxxxxx"
+grafana_loki_datasource_uid   = "P8E80F9AEF21F6940"
+
+# Slack Alerting
+slack_webhook_url = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX"
+slack_channel     = "#alerts"
