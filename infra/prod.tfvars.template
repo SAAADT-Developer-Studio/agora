@@ -17,7 +17,8 @@ aws_region = "eu-central-1"
 grafana_url                   = "https://your-org.grafana.net"
 grafana_service_account_token = "glsa_xxxxxxxxxxxxxxxxxxxxx"
 grafana_loki_datasource_uid   = "P8E80F9AEF21F6940"
+grafana_sm_access_token       = "your-synthetic-monitoring-token"
 
 # Slack Alerting
 slack_webhook_url = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX"
-slack_channel     = "#alerts"
+slack_channel     = "#vidik-alerts"

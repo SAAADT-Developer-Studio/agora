@@ -55,6 +55,12 @@ variable "grafana_loki_datasource_uid" {
   description = "UID of the Loki datasource in Grafana Cloud"
 }
 
+variable "grafana_sm_access_token" {
+  type        = string
+  description = "Grafana Cloud Synthetic Monitoring access token"
+  sensitive   = true
+}
+
 # Slack Variables
 variable "slack_webhook_url" {
   type        = string
@@ -65,5 +71,5 @@ variable "slack_webhook_url" {
 variable "slack_channel" {
   type        = string
   description = "Slack channel to send alerts to (e.g., #alerts)"
-  default     = "#alerts"
+  default     = "#vidik-alerts"
 }
