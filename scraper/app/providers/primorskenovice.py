@@ -1,4 +1,6 @@
-from app.providers.news_provider import NewsProvider
+import httpx
+import feedparser
+from app.providers.news_provider import NewsProvider, ArticleMetadata
 from app.providers.enums import ProviderKey, BiasRating
 
 
