@@ -3,7 +3,7 @@
 - Fetches RSS feeds of multiple news providers
 - Fetches their content
 - Generates the embeddings for the articles
-- Does DBSCAN clustering on the window of last X articles
+- Does HDBSCAN clustering on the window of last X articles
 - Generates Cluster Titles with an LLM
 
 ## Setup
@@ -57,3 +57,7 @@ uv run alembic upgrade head
 # check if the migration was applied sucessfully
 uv run alembic check
 ```
+
+### Adding a new provider
+
+Instructions for adding a new provider are [here](./app/providers/README.md)

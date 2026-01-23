@@ -30,6 +30,7 @@ RANKS: dict[int, list[ProviderKey]] = {
     ],
     3: [
         ProviderKey.BLOOMBERGADRIA,
+        ProviderKey.FINANCE,
         ProviderKey.ZANIMAME,
         ProviderKey.LJUBLJANSKENOVICE,
         ProviderKey.PRIMORSKENOVICE,

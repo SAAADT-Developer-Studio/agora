@@ -90,7 +90,7 @@ async def discover_articles(provider_keys: list[str] | None = None):
         if isinstance(result, Exception):
             logging.error(f"Failed to fetch from {provider_key}: {result}")
         elif isinstance(result, list):
-            successes.extend(result)
+            successes.extend(process_articles(result))
             logging.info(f"Fetched {len(result)} articles from {provider_key}")
 
-    return process_articles(successes)
+    return successes
