@@ -20,7 +20,7 @@ class TimeDict(TypedDict, total=False):
 
 # Default time window for fetching recent articles, can be overridden by individual providers
 TIME_WINDOW: TimeDict = {
-    "minutes": 20,
+    "minutes": 30,
 }
 
 APP_ENV = ensure_env_var("APP_ENV")
