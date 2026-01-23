@@ -25,8 +25,8 @@ News providers TODO:
 - [x] [info360](https://info360.si/) https://info360.si//rss.xml
 - [x] [lokalec](https://www.lokalec.si) https://www.lokalec.si/feed/
 - [x] [domovina](https://www.domovina.je/) https://www.domovina.je/feed
+- [x] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [insajder](https://insajder.com/)
-- [ ] [finance](https://www.finance.si/) PAYWALLED, make sure this is handled https://feeds.feedburner.com/financesi
 - [ ] [metropolitan](https://www.metropolitan.si/) https://www.metropolitan.si/feeds/latest/
 - [ ] [nadlani](nadlani.si) https://www.nadlani.si/feed/
 - [ ] [sobota info](https://sobotainfo.com/novice)
@@ -87,7 +87,7 @@ This is a useful site for finding the url: https://lighthouseapp.io/tools/feed-f
 Create a new Python file at `/scraper/app/providers/[providername].py`.
 
 ```python
-from app.providers.news_provider import NewsProvider
+from app.providers.news_provider import NewsProvider, ProviderKey, BiasRating
 
 
 class DeloProvider(NewsProvider):
@@ -127,6 +127,8 @@ Verify the new provider by running the following command:
 ```bash
 uv run python3 -m app.main --providers=delo
 ```
+
+The provider will be flushed to the database on init, in `sync_providers`.
 
 ## Other
 
