@@ -29,6 +29,7 @@ EXCLUSION_RULES: list[tuple[str, Callable[[ArticleMetadata], bool]]] = [
                 "Pregled - ",
                 "Kronika v zadnjih 24 urah",
                 "Napoved - ",
+                "Tedenska napoved - ",
             )
         ),
     ),
