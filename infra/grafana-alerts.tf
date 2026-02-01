@@ -197,9 +197,9 @@ resource "grafana_notification_policy" "scraper_policy" {
 
   policy {
     matcher {
-      label = "service"
+      label = "namespace"
       match = "="
-      value = "synthetic-monitoring"
+      value = "synthetic_monitoring"
     }
     contact_point = grafana_contact_point.slack_synthetic_alerts.name
     group_by      = ["alertname"]
@@ -259,8 +259,8 @@ resource "grafana_synthetic_monitoring_check_alerts" "vidik_alerts" {
   alerts = [
     {
       name        = "ProbeFailedExecutionsTooHigh"
-      threshold   = 1
-      period      = "10m"
+      threshold   = 2
+      period      = "15m"
       runbook_url = ""
     }
   ]
