@@ -29,9 +29,13 @@ EXCLUSION_RULES: list[tuple[str, Callable[[ArticleMetadata], bool]]] = [
                 "Pregled - ",
                 "Kronika v zadnjih 24 urah",
                 "Napoved - ",
+                "Tedenska napoved - ",
             )
         ),
     ),
+    (ProviderKey.ZURNAL24.value, lambda a: a.title.startswith("Dnevni horoskop")),
+    (ProviderKey.SIOL.value, lambda a: a.link.startswith("https://siol.net/trendi/horoskop/")),
+    (ProviderKey.SVET24.value, lambda a: a.link.startswith("https://svet24.si/horoskop/")),
 ]
 
 
