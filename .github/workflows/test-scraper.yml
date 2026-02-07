@@ -39,6 +39,7 @@ jobs:
         env:
           APP_ENV: test
           GOOGLE_API_KEY: test_key_not_used_in_unit_tests
+          OPENAI_API_KEY: test_key_not_used_in_unit_tests
           DATABASE_URL: postgresql://test:test@localhost:5432/test_db
           PEXELS_API_KEY: test_key_not_used_in_unit_tests
 
