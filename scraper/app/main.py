@@ -4,6 +4,7 @@ import logging
 import argparse
 from langchain.chat_models import init_chat_model
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 from app.database.services import NewsProviderService
 from app.pipeline import process
@@ -50,7 +51,14 @@ async def main() -> None:
 
 
 async def run(providers: list[str] | None = None) -> asyncio.Task:
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")
+    # https://docs.langchain.com/oss/python/integrations/text_embedding/cloudflare_workersai
+    # from langchain_cloudflare.embeddings import (
+    #     CloudflareWorkersAIEmbeddings,
+    # )
+    embeddings = OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        dimensions=768,
+    )
     analysis_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
 
     await process(

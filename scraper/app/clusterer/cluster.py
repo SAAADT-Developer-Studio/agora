@@ -35,7 +35,7 @@ def assign_singletons(labels: list[int]) -> list[int]:
 
 
 def cluster(articles: Sequence[Article]) -> dict[int, list[Article]]:
-    embeddings = [np.array(article.embedding) for article in articles]
+    embeddings = [np.array(article.embedding, dtype=np.float64) for article in articles]
     labels = assign_singletons(cluster_impl(embeddings))
     clusters: dict[int, list[Article]] = {}
     for label, article in zip(labels, articles):
