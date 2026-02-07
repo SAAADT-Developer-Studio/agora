@@ -16,6 +16,7 @@
       # App configuration
       APP_ENV: production
       GOOGLE_API_KEY: "{{ lookup('env', 'GOOGLE_API_KEY') }}"
+      OPENAI_API_KEY: "{{ lookup('env', 'OPENAI_API_KEY') }}"
       DATABASE_URL: "{{ lookup('env', 'DATABASE_URL') }}"
       PEXELS_API_KEY: "{{ lookup('env', 'PEXELS_API_KEY') }}"
       # Grafana Alloy configuration
