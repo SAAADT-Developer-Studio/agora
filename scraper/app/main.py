@@ -3,7 +3,6 @@ import dotenv
 import logging
 import argparse
 from langchain.chat_models import init_chat_model
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_openai import OpenAIEmbeddings
 
 from app.database.services import NewsProviderService
@@ -59,7 +58,12 @@ async def run(providers: list[str] | None = None) -> asyncio.Task:
         model="text-embedding-3-small",
         dimensions=768,
     )
-    analysis_model = init_chat_model("gemini-2.0-flash", model_provider="google_genai")
+    analysis_model = init_chat_model(
+        "deepseek/deepseek-v4-flash",
+        model_provider="openai",
+        base_url=config.OPENROUTER_BASE_URL,
+        api_key=config.OPENROUTER_API_KEY,
+    )
 
     await process(
         providers=providers,
