@@ -2,13 +2,13 @@ import asyncio
 import dotenv
 import logging
 import argparse
-from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 
 from app.database.services import NewsProviderService
 from app.pipeline import process
 from app.providers.providers import PROVIDERS
 from app import config
+from app.openrouter import create_openrouter_chat_model
 
 import httpx
 
@@ -58,12 +58,7 @@ async def run(providers: list[str] | None = None) -> asyncio.Task:
         model="text-embedding-3-small",
         dimensions=768,
     )
-    analysis_model = init_chat_model(
-        "deepseek/deepseek-v4-flash",
-        model_provider="openai",
-        base_url=config.OPENROUTER_BASE_URL,
-        api_key=config.OPENROUTER_API_KEY,
-    )
+    analysis_model = create_openrouter_chat_model()
 
     await process(
         providers=providers,
