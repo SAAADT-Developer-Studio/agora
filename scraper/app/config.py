@@ -26,6 +26,9 @@ TIME_WINDOW: TimeDict = {
 APP_ENV = ensure_env_var("APP_ENV")
 OPENAI_API_KEY = ensure_env_var("OPENAI_API_KEY")
 OPENROUTER_API_KEY = ensure_env_var("OPENROUTER_API_KEY")
+OPENROUTER_FALLBACK_API_KEY = os.getenv("OPENROUTER_FALLBACK_API_KEY") or os.getenv(
+    "OPENROUTER_API_KEY_FALLBACK"
+)
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 DATABASE_URL = ensure_env_var("DATABASE_URL")
 PEXELS_API_KEY = ensure_env_var("PEXELS_API_KEY")
