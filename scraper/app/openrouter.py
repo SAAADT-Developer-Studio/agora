@@ -15,6 +15,7 @@ def create_openrouter_chat_model(model_name: str = DEFAULT_OPENROUTER_MODEL):
         model_provider="openai",
         base_url=config.OPENROUTER_BASE_URL,
         api_key=config.OPENROUTER_API_KEY,
+        extra_body={"reasoning": {"enabled": False}},
     )
 
     fallback_key = config.OPENROUTER_FALLBACK_API_KEY
@@ -26,6 +27,7 @@ def create_openrouter_chat_model(model_name: str = DEFAULT_OPENROUTER_MODEL):
         model_provider="openai",
         base_url=config.OPENROUTER_BASE_URL,
         api_key=fallback_key,
+        extra_body={"reasoning": {"enabled": False}},
     )
 
     logging.info("OpenRouter fallback API key configured")
