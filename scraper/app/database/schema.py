@@ -11,6 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Enum,
     Index,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import (
@@ -141,6 +142,24 @@ class ClusterV2(Base):
     slug: Mapped[Optional[str]] = mapped_column(String, unique=True)
 
     run_id: Mapped[int] = mapped_column(ForeignKey("cluster_run.id", ondelete="CASCADE"))
+    wiki_image_urls: Mapped[List[str]] = mapped_column(
+        ARRAY(String),
+        default_factory=list,
+        server_default=text("'{}'::character varying[]"),
+    )
+    wiki_image_metadata: Mapped[List[dict[str, object]]] = mapped_column(
+        JSONB,
+        default_factory=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    wiki_image_lookup_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+    )
+    wiki_image_last_attempt_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        default=None,
+    )
     run: Mapped["ClusterRun"] = relationship("ClusterRun", back_populates="clusters", init=False)
 
     created_at: Mapped[datetime] = mapped_column(
