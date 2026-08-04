@@ -69,6 +69,13 @@
       register: pull_result
       changed_when: "'Downloaded' in pull_result.stdout or 'Pull complete' in pull_result.stdout"
 
+    - name: Apply database migrations with the new scraper image
+      ansible.builtin.command:
+        cmd: docker compose run --rm --no-deps scraper alembic upgrade head
+        chdir: "{{ project_dir }}"
+      register: migration_result
+      changed_when: "'Running upgrade' in migration_result.stderr"
+
     - name: Start docker-compose stack
       ansible.builtin.command:
         cmd: docker compose up -d --remove-orphans
