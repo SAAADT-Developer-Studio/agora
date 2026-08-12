@@ -12,10 +12,6 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5"
     }
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.0"
-    }
     grafana = {
       source  = "grafana/grafana"
       version = "~> 4.23"
@@ -28,10 +24,6 @@ provider "hcloud" {
 
 provider "digitalocean" {
   token = var.digitalocean_token
-}
-
-provider "aws" {
-  region = var.aws_region
 }
 
 resource "hcloud_server" "scraper_server" {
