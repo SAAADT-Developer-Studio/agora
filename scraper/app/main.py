@@ -7,10 +7,7 @@ from langchain_openai import OpenAIEmbeddings
 from app.database.services import NewsProviderService
 from app.pipeline import process
 from app.providers.providers import PROVIDERS
-from app import config
 from app.openrouter import create_openrouter_chat_model
-
-import httpx
 
 
 async def main() -> None:
@@ -34,22 +31,15 @@ async def main() -> None:
     # TODO: implement recovering from a checkpoint timestamp
     # in case the scraper crashes, so we don't miss any articles
 
-    # Keep track of background cache population tasks
-    background_tasks = set()
-
     try:
         while True:
-            cache_task = await run(providers)
-            # Keep reference to prevent task from being garbage collected
-            background_tasks.add(cache_task)
-            cache_task.add_done_callback(background_tasks.discard)
-
+            await run(providers)
             await asyncio.sleep(10 * 60)  # 10 minutes
     except KeyboardInterrupt:
         logging.info("Shutting down...")
 
 
-async def run(providers: list[str] | None = None) -> asyncio.Task:
+async def run(providers: list[str] | None = None) -> None:
     # https://docs.langchain.com/oss/python/integrations/text_embedding/cloudflare_workersai
     # from langchain_cloudflare.embeddings import (
     #     CloudflareWorkersAIEmbeddings,
@@ -65,26 +55,6 @@ async def run(providers: list[str] | None = None) -> asyncio.Task:
         embeddings=embeddings,
         analysis_model=analysis_model,
     )
-
-    # Populate cache after processing - non-blocking with error handling
-    return asyncio.create_task(populate_cache())
-
-
-async def populate_cache() -> None:
-    if config.APP_ENV == "development":
-        logging.info("Skipping cache population in development environment")
-        return
-    try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            response = await client.post("https://vidik.si/api/populate-cache")
-            response.raise_for_status()
-            logging.info("Successfully populated cache")
-    except httpx.TimeoutException:
-        logging.error("Timeout while populating cache")
-    except httpx.HTTPStatusError as e:
-        logging.error(f"HTTP error while populating cache: {e.response.status_code}")
-    except Exception as e:
-        logging.error(f"Unexpected error while populating cache: {e}")
 
 
 if __name__ == "__main__":

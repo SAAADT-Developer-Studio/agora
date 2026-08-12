@@ -32,12 +32,6 @@ variable "cf_api_token" {
   sensitive   = true # Mark as sensitive to prevent logging
 }
 
-variable "aws_region" {
-  type        = string
-  description = "AWS region"
-  default     = "eu-central-1"
-}
-
 # Grafana Cloud Variables
 variable "grafana_url" {
   type        = string

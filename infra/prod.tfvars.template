@@ -10,9 +10,6 @@ cf_zone_id    = "your-cloudflare-zone-id"
 cf_email      = "your-cloudflare-email"
 cf_api_token  = "your-cloudflare-api-token"
 
-# AWS
-aws_region = "eu-central-1"
-
 # Grafana Cloud
 grafana_url                   = "https://your-org.grafana.net"
 grafana_service_account_token = "glsa_xxxxxxxxxxxxxxxxxxxxx"
