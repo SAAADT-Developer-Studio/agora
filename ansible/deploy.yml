@@ -4,7 +4,6 @@
   become: true
 
   vars:
-    docker_image_name: "{{ lookup('env', 'DOCKER_IMAGE_NAME') }}"
     docker_image_tag: "{{ lookup('env', 'DOCKER_IMAGE_TAG') }}"
     docker_hub_username: "{{ lookup('env', 'DOCKER_HUB_USERNAME') }}"
     docker_hub_token: "{{ lookup('env', 'DOCKER_HUB_TOKEN') }}"
@@ -42,13 +41,13 @@
 
     - name: Copy docker-compose.yml to server
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../scraper/docker-compose.yml"
+        src: "{{ playbook_dir }}/../docker-compose.yml"
         dest: "{{ project_dir }}/docker-compose.yml"
         mode: "0644"
 
     - name: Copy config.alloy to server
       ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../scraper/config.alloy"
+        src: "{{ playbook_dir }}/../config.alloy"
         dest: "{{ project_dir }}/config.alloy"
         mode: "0644"
 
@@ -71,7 +70,7 @@
 
     - name: Apply database migrations with the new scraper image
       ansible.builtin.command:
-        cmd: docker compose run --rm --no-deps scraper alembic upgrade head
+        cmd: docker compose run --rm --no-deps scraper alembic -c /app/packages/database/alembic.ini upgrade head
         chdir: "{{ project_dir }}"
       register: migration_result
       changed_when: "'Running upgrade' in migration_result.stderr"
@@ -92,6 +91,11 @@
         name: scraper
       register: scraper_info
 
+    - name: Verify clusterer container is running
+      community.docker.docker_container_info:
+        name: clusterer
+      register: clusterer_info
+
     - name: Verify alloy container is running
       community.docker.docker_container_info:
         name: alloy
@@ -101,6 +105,11 @@
       ansible.builtin.fail:
         msg: "Scraper container is not running or has crashed."
       when: scraper_info.container.State.Status != "running"
+
+    - name: Fail if clusterer container is not running
+      ansible.builtin.fail:
+        msg: "Clusterer container is not running or has crashed."
+      when: clusterer_info.container.State.Status != "running"
 
     - name: Fail if alloy container is not running
       ansible.builtin.fail:
