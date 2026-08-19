@@ -1,5 +1,5 @@
 ---
-- name: Deploy Scraper Stack to Hetzner VM
+- name: Deploy stack to Hetzner VM
   hosts: hetzner_vms
   become: true
 
@@ -7,7 +7,7 @@
     docker_image_tag: "{{ lookup('env', 'DOCKER_IMAGE_TAG') }}"
     docker_hub_username: "{{ lookup('env', 'DOCKER_HUB_USERNAME') }}"
     docker_hub_token: "{{ lookup('env', 'DOCKER_HUB_TOKEN') }}"
-    project_dir: /opt/scraper
+    project_dir: /opt/agora
     app_secrets:
       # Docker image configuration
       DOCKER_HUB_USERNAME: "{{ docker_hub_username }}"
@@ -39,6 +39,17 @@
         state: directory
         mode: "0755"
 
+    - name: Check for legacy deploy directory
+      ansible.builtin.stat:
+        path: /opt/scraper/docker-compose.yml
+      register: legacy_compose
+
+    - name: Stop legacy stack at /opt/scraper
+      ansible.builtin.command:
+        cmd: docker compose down
+        chdir: /opt/scraper
+      when: legacy_compose.stat.exists
+
     - name: Copy docker-compose.yml to server
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../docker-compose.yml"
@@ -68,7 +79,7 @@
       register: pull_result
       changed_when: "'Downloaded' in pull_result.stdout or 'Pull complete' in pull_result.stdout"
 
-    - name: Apply database migrations with the new scraper image
+    - name: Apply database migrations
       ansible.builtin.command:
         cmd: docker compose run --rm --no-deps scraper alembic -c /app/packages/database/alembic.ini upgrade head
         chdir: "{{ project_dir }}"

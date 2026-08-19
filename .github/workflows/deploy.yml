@@ -1,4 +1,4 @@
-name: Deploy Scraper to Hetzner VM
+name: Deploy to Hetzner VM
 
 on:
   push:
@@ -15,6 +15,7 @@ on:
       - scraper/Dockerfile
       - clusterer/Dockerfile
       - ansible/deploy.yml
+      - .github/workflows/deploy.yml
       - "!scraper/**/*.md"
 
 env:
