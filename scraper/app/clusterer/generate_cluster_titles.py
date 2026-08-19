@@ -1,4 +1,4 @@
-from app.database.schema import Article
+from database.schema import Article
 from langchain.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
 import logging

@@ -16,9 +16,9 @@ from app.pipeline.analyzer import (
 from app.pipeline.images import search_stock_images
 from app.providers.news_provider import ExtractedArticle, ArticleMetadata, NewsProvider
 from app.providers.providers import PROVIDERS
-from app.database.schema import Article
-from app.database.unit_of_work import database_session
-from app.database.services import ArticleService
+from database.schema import Article
+from database.unit_of_work import database_session
+from app.services import ArticleService
 from app.utils.concurrency import run_concurrently_with_limit
 from app.clusterer.run_clustering import run_clustering
 

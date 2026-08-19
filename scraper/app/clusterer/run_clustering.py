@@ -9,8 +9,8 @@ from langchain.chat_models import BaseChatModel
 from app.clusterer.cluster import cluster
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
 from app.clusterer.hash_cluster import hash_cluster
-from app.database.schema import Article, ArticleCluster, ClusterRun, ClusterV2
-from app.database.unit_of_work import UnitOfWork
+from database.schema import Article, ArticleCluster, ClusterRun, ClusterV2
+from database.unit_of_work import UnitOfWork
 from app.integrations.wikimedia import lookup_wikimedia_images_for_clusters
 from app.utils.slugify import slugify
 

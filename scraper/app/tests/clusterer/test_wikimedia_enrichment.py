@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 import app.clusterer.run_clustering as clustering_module
-from app.database.schema import ClusterV2
+from database.schema import ClusterV2
 
 
 @dataclass

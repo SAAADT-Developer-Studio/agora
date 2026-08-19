@@ -4,8 +4,8 @@ Contains application-specific operations that combine repository methods.
 """
 
 import app.providers.news_provider as news_provider_module
-from .unit_of_work import UnitOfWork, database_session
-from .schema import Article, NewsProvider
+from database.unit_of_work import UnitOfWork, database_session
+from database.schema import Article, NewsProvider
 from app.providers.ranks import assign_ranks
 
 

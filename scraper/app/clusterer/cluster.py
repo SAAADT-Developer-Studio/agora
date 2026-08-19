@@ -8,8 +8,8 @@ from typing import Sequence
 import logging
 import json
 
-from app.database.unit_of_work import database_session, UnitOfWork
-from app.database.schema import Article
+from database.unit_of_work import database_session, UnitOfWork
+from database.schema import Article
 
 
 def cluster_impl(embeddings: list[np.ndarray]) -> list[int]:
