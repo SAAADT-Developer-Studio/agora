@@ -1,7 +1,7 @@
 import logging
 
 from langchain.chat_models import init_chat_model
-from openai import PermissionDeniedError, RateLimitError
+from openai import APIStatusError
 
 from app import config
 
@@ -33,5 +33,7 @@ def create_openrouter_chat_model(model_name: str = DEFAULT_OPENROUTER_MODEL):
     logging.info("OpenRouter fallback API key configured")
     return primary_model.with_fallbacks(
         [fallback_model],
-        exceptions_to_handle=(RateLimitError, PermissionDeniedError),
+        # OpenRouter's 402 credit errors use APIStatusError directly; 403 and
+        # 429 errors are subclasses and remain covered by this handler.
+        exceptions_to_handle=(APIStatusError,),
     )
