@@ -28,7 +28,7 @@ import uuid
 import enum
 import dotenv
 
-dotenv.load_dotenv()
+dotenv.load_dotenv(dotenv.find_dotenv())
 
 
 class Base(MappedAsDataclass, DeclarativeBase):

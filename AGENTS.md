@@ -10,7 +10,7 @@ packages/database/    schema, repos, Alembic (single source of truth)
 
 `uv sync` without `--package` installs the empty root project. Always pass `--package scraper` or `--package clusterer`.
 
-`--directory scraper` is required for anything that imports `app` / `scripts` or loads `scraper/.env`.
+`--directory scraper` is required for anything that imports `app` / `scripts`. Env vars live in the repo-root `.env`.
 
 ## Commands
 

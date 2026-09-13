@@ -1,13 +1,11 @@
 import logging
-from pathlib import Path
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 
 def main() -> None:
-    load_dotenv()
-    load_dotenv(Path(__file__).resolve().parent.parent / "scraper" / ".env")
+    load_dotenv(find_dotenv())
     logging.basicConfig(level=logging.INFO)
     from .run import run
 

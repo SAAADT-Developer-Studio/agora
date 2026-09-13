@@ -14,7 +14,7 @@ Install [uv](https://docs.astral.sh/uv), then:
 make scraper          # install scraper + database
 make scraper-dev      # + test/dev deps
 make test
-make run              # scraper loop (needs scraper/.env)
+make run              # scraper loop (needs repo-root `.env`)
 ```
 
 ```bash

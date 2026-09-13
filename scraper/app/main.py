@@ -14,7 +14,7 @@ import httpx
 
 
 async def main() -> None:
-    dotenv.load_dotenv()
+    dotenv.load_dotenv(dotenv.find_dotenv())
     logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(description="Article Scraper")
