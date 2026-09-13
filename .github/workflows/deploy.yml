@@ -25,8 +25,17 @@ env:
   HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: scraper
+            file: scraper/Dockerfile
+            image: vidik-scraper
+          - name: clusterer
+            file: clusterer/Dockerfile
+            image: vidik-clusterer
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -35,25 +44,24 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }} # Use a PAT for security
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Build and Push Scraper Image
+      - name: Build and Push ${{ matrix.name }} Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: scraper/Dockerfile
+          file: ${{ matrix.file }}
           push: true
-          tags: ${{ env.DOCKER_HUB_USERNAME }}/vidik-scraper:${{ github.sha }}
+          tags: ${{ env.DOCKER_HUB_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
           cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Build and Push Clusterer Image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: clusterer/Dockerfile
-          push: true
-          tags: ${{ env.DOCKER_HUB_USERNAME }}/vidik-clusterer:${{ github.sha }}
-          cache-from: type=gha
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Install Ansible
         run: |
@@ -65,8 +73,6 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # For improved security, you can explicitly add host to known_hosts
-          # This is important for strict host key checking
           ssh-keyscan -H "${{ env.HETZNER_VM_HOST }}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
         shell: bash
@@ -84,20 +90,18 @@ jobs:
           ansible-playbook ansible/deploy.yml \
             -i ansible/inventory.ini \
             --private-key ~/.ssh/id_rsa
-        working-directory: ${{ github.workspace }} # Ensure ansible runs from repo root
+        working-directory: ${{ github.workspace }}
         env:
           HETZNER_VM_HOST: ${{ env.HETZNER_VM_HOST }}
           HETZNER_SSH_USER: ${{ env.HETZNER_SSH_USER }}
           DOCKER_IMAGE_TAG: ${{ github.sha }}
           DOCKER_HUB_USERNAME: ${{ env.DOCKER_HUB_USERNAME }}
           DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
-          # App secrets
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_FALLBACK_API_KEY: ${{ secrets.OPENROUTER_FALLBACK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # Grafana Alloy secrets
           GRAFANA_LOKI_URL: ${{ secrets.GRAFANA_LOKI_URL }}
           GRAFANA_LOKI_USERNAME: ${{ secrets.GRAFANA_LOKI_USERNAME }}
           GRAFANA_PROMETHEUS_URL: ${{ secrets.GRAFANA_PROMETHEUS_URL }}
