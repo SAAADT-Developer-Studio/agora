@@ -5,7 +5,7 @@ import boto3
 from botocore.exceptions import ClientError
 import dotenv
 
-dotenv.load_dotenv()
+dotenv.load_dotenv(dotenv.find_dotenv())
 
 
 def process_image_for_web(

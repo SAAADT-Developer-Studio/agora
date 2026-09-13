@@ -5,7 +5,12 @@ requires-python = "~=3.13.0"
 dependencies = [
     "apscheduler>=3.11.3",
     "database",
+    "numpy>=2.2.2",
+    "python-dotenv>=1.0.1,<2",
 ]
+
+[dependency-groups]
+test = ["pytest>=8.0.0"]
 
 [tool.uv.sources]
 database = { workspace = true }
@@ -19,3 +24,8 @@ packages = ["clusterer"]
 
 [tool.setuptools.package-dir]
 clusterer = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-v", "--tb=short"]

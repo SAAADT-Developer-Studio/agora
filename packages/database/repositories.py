@@ -4,9 +4,18 @@ Separates concerns and provides clean abstractions for each entity.
 """
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
-from sqlalchemy import select, func
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, selectinload, load_only
-from .schema import Article, NewsProvider, Cluster, ClusterRun, ArticleCluster, ClusterV2
+from .schema import (
+    Article,
+    NewsProvider,
+    Cluster,
+    ClusterRun,
+    ArticleCluster,
+    ClusterV2,
+    Story,
+    StoryArticle,
+)
 from datetime import datetime, timedelta
 from typing import Sequence
 
@@ -139,3 +148,38 @@ class ClusterRunRepository:
             .order_by(ClusterRun.created_at.desc())
             .limit(1)
         ).first()
+
+
+class StoryRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get_assigned_since(self, since: datetime) -> Sequence[tuple[int, int, list[float]]]:
+        stmt = (
+            select(Article.id, StoryArticle.story_id, Article.embedding)
+            .join(StoryArticle, StoryArticle.article_id == Article.id)
+            .where(Article.published_at > since)
+        )
+        return self.session.execute(stmt).tuples().all()
+
+    def get_unassigned_since(self, since: datetime, limit: int = 3000) -> Sequence[Article]:
+        return self.session.scalars(
+            select(Article)
+            .where(Article.published_at > since)
+            .where(~exists(select(StoryArticle.id).where(StoryArticle.article_id == Article.id)))
+            .order_by(Article.published_at.asc())
+            .options(load_only(Article.id, Article.title, Article.embedding, Article.published_at))
+            .limit(limit)
+        ).all()
+
+    def get_by_ids(self, story_ids: list[int]) -> dict[int, Story]:
+        if not story_ids:
+            return {}
+        stories = self.session.scalars(select(Story).where(Story.id.in_(story_ids))).all()
+        return {story.id: story for story in stories}
+
+    def create(self, story: Story) -> None:
+        self.session.add(story)
+
+    def add_membership(self, membership: StoryArticle) -> None:
+        self.session.add(membership)

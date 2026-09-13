@@ -5,7 +5,7 @@ from typing import List, TypedDict
 
 from app.utils.ensure_env_var import ensure_env_var
 
-dotenv.load_dotenv()
+dotenv.load_dotenv(dotenv.find_dotenv())
 
 
 class TimeDict(TypedDict, total=False):

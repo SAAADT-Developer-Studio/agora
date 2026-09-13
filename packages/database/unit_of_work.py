@@ -13,6 +13,7 @@ from .repositories import (
     ClusterRepository,
     ClusterRunRepository,
     ClusterV2Repository,
+    StoryRepository,
 )
 
 
@@ -29,6 +30,7 @@ class UnitOfWork:
         self._clusters: ClusterRepository | None = None
         self._clusters_v2: ClusterV2Repository | None = None
         self._cluster_runs: ClusterRunRepository | None = None
+        self._stories: StoryRepository | None = None
 
     @property
     def articles(self) -> ArticleRepository:
@@ -66,6 +68,12 @@ class UnitOfWork:
         return self._cluster_runs
 
     @property
+    def stories(self) -> StoryRepository:
+        if self._stories is None:
+            self._stories = StoryRepository(self.session)
+        return self._stories
+
+    @property
     def session(self) -> Session:
         """Get the current session."""
         if self._session is None:
@@ -87,6 +95,7 @@ class UnitOfWork:
             self._session = None
             self._articles = None
             self._news_providers = None
+            self._stories = None
 
 
 @contextmanager
