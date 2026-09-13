@@ -23,9 +23,12 @@ from sqlalchemy.orm import (
     MappedAsDataclass,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
-import app.config as config
+import os
 import uuid
 import enum
+import dotenv
+
+dotenv.load_dotenv()
 
 
 class Base(MappedAsDataclass, DeclarativeBase):
@@ -309,7 +312,11 @@ class ArticleSocialPost(Base):
         return f"<ArticleSocialPost(id={self.id}, article_id={self.article_id}, social_post_id={self.social_post_id})>"
 
 
-engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
+_database_url = os.getenv("DATABASE_URL")
+if not _database_url:
+    raise ValueError("'DATABASE_URL' environment variable is not set.")
+
+engine = create_engine(_database_url, pool_pre_ping=True)
 Session = sessionmaker(bind=engine)
 
 # Tables are managed by Alembic migrations

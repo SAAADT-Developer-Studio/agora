@@ -4,7 +4,7 @@ import logging
 import argparse
 from langchain_openai import OpenAIEmbeddings
 
-from app.database.services import NewsProviderService
+from app.services import NewsProviderService
 from app.pipeline import process
 from app.providers.providers import PROVIDERS
 from app import config

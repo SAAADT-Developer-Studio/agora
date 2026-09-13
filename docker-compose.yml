@@ -11,6 +11,14 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       PEXELS_API_KEY: ${PEXELS_API_KEY}
 
+  clusterer:
+    image: ${DOCKER_HUB_USERNAME}/vidik-clusterer:${DOCKER_IMAGE_TAG:-latest}
+    container_name: clusterer
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV}
+      DATABASE_URL: ${DATABASE_URL}
+
   alloy:
     image: grafana/alloy:latest
     container_name: alloy

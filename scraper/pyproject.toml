@@ -16,6 +16,7 @@ dependencies = [
     "langchain-openai>=1.1.7,<2",
     "html2text>=2025.4.15,<2026",
     "python-readability>=0.1.3,<0.2",
+    "database",
     "sqlalchemy>=2.0.41,<3",
     "psycopg2-binary>=2.9.10,<3",
     "alembic>=1.14.0,<2",
@@ -45,6 +46,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 include = ["scraper/"] # Includes all contents of the scraper directory
+
+[tool.uv.sources]
+database = { workspace = true }
 
 [tool.mypy]
 enable_incomplete_feature = "NewGenericSyntax"

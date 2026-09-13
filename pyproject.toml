@@ -1,0 +1,8 @@
+[project]
+name = "agora"
+version = "0.0.0"
+requires-python = "~=3.13.0"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["scraper", "clusterer", "packages/database"]

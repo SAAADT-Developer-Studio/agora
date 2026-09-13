@@ -4,15 +4,15 @@ on:
   pull_request:
     paths:
       - "scraper/**"
+      - "packages/database/**"
+      - "pyproject.toml"
+      - "uv.lock"
       - "!scraper/**/*.md"
       - ".github/workflows/test-scraper.yml"
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./scraper
 
     steps:
       - name: Checkout code
@@ -28,14 +28,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --group test
+          uv sync --package scraper --group test
 
       # TODO: Add database setup when integration tests are added
       # TODO: Add linting/formatting checks (black, mypy, ruff)
 
       - name: Run tests
         run: |
-          uv run pytest
+          uv run --package scraper --directory scraper pytest
         env:
           APP_ENV: test
           OPENROUTER_API_KEY: test_key_not_used_in_unit_tests
