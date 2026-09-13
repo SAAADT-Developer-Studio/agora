@@ -366,13 +366,25 @@ source = { editable = "clusterer" }
 dependencies = [
     { name = "apscheduler" },
     { name = "database" },
+    { name = "numpy" },
+    { name = "python-dotenv" },
+]
+
+[package.dev-dependencies]
+test = [
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "apscheduler", specifier = ">=3.11.3" },
     { name = "database", editable = "packages/database" },
+    { name = "numpy", specifier = ">=2.2.2" },
+    { name = "python-dotenv", specifier = ">=1.0.1,<2" },
 ]
+
+[package.metadata.requires-dev]
+test = [{ name = "pytest", specifier = ">=8.0.0" }]
 
 [[package]]
 name = "colorama"

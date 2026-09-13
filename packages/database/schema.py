@@ -72,6 +72,14 @@ class Article(Base):
         "ArticleSocialPost", back_populates="article", cascade="all, delete-orphan", init=False
     )
 
+    story_memberships: Mapped[List["StoryArticle"]] = relationship(
+        "StoryArticle",
+        back_populates="article",
+        cascade="all, delete-orphan",
+        foreign_keys="StoryArticle.article_id",
+        init=False,
+    )
+
     __table_args__ = (
         Index("ix_article_published_at_news_provider_key", "published_at", "news_provider_key"),
     )
@@ -255,6 +263,60 @@ class MossData(Base):
 
     def __repr__(self):
         return f"<MossData(id={self.id}, provider_key={self.provider_key}, website={self.website})>"
+
+
+class Story(Base):
+    __tablename__ = "story"
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    title: Mapped[str] = mapped_column(String)
+    last_article_published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now, init=False
+    )
+
+    memberships: Mapped[List["StoryArticle"]] = relationship(
+        "StoryArticle",
+        back_populates="story",
+        cascade="all, delete-orphan",
+        init=False,
+    )
+
+    __table_args__ = (Index("ix_story_last_article_published_at", "last_article_published_at"),)
+
+    def __repr__(self):
+        return f"<Story(id={self.id}, title={self.title})>"
+
+
+class StoryArticle(Base):
+    __tablename__ = "story_article"
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    story_id: Mapped[int] = mapped_column(ForeignKey("story.id", ondelete="CASCADE"))
+    article_id: Mapped[int] = mapped_column(ForeignKey("article.id", ondelete="CASCADE"))
+    method: Mapped[str] = mapped_column(String)
+    similarity: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    nearest_article_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("article.id", ondelete="SET NULL"), default=None
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now, init=False
+    )
+
+    story: Mapped["Story"] = relationship("Story", back_populates="memberships", init=False)
+    article: Mapped["Article"] = relationship(
+        "Article", back_populates="story_memberships", foreign_keys=[article_id], init=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("article_id", name="uq_story_article_article_id"),
+        Index("ix_story_article_story_id", "story_id"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<StoryArticle(id={self.id}, story_id={self.story_id}, article_id={self.article_id})>"
+        )
 
 
 class SocialPlatform(str, enum.Enum):
