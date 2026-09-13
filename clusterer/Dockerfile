@@ -7,6 +7,7 @@ ENV UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock ./
 COPY packages/database packages/database
+COPY scraper/pyproject.toml scraper/
 COPY clusterer/pyproject.toml clusterer/
 
 RUN --mount=type=cache,target=/root/.cache/uv \

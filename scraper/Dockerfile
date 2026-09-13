@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y build-essential
 COPY pyproject.toml uv.lock ./
 COPY packages/database packages/database
 COPY scraper/pyproject.toml scraper/
+COPY clusterer/pyproject.toml clusterer/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --package scraper --locked --no-install-project --no-dev
