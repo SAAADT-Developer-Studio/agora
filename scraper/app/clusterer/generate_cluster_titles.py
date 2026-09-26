@@ -1,8 +1,9 @@
 from database.schema import Article
 from langchain.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
-import logging
 from typing import Sequence
+
+from app.utils.llm_errors import log_llm_exceptions
 
 
 async def generate_cluster_titles(
@@ -24,13 +25,13 @@ async def generate_cluster_titles(
     results: Sequence[str | Exception] = await model.abatch(
         inputs=list(inputs), return_exceptions=True
     )
-    # langchain returns some weird ass structure
     titles = []
+    failures: list[object] = []
     for result, articles in zip(results, article_lists):
         if isinstance(result, str):
             titles.append(result)
         else:
-            # exception
             titles.append(articles[0].title)
-            logging.warning(f"Failed to generate title for {len(articles)} articles: {result}")
+            failures.append(result)
+    log_llm_exceptions("Failed to generate cluster titles", failures)
     return titles
