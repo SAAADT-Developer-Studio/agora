@@ -4,7 +4,8 @@ import logging
 from database.schema import Story, StoryArticle
 from database.unit_of_work import UnitOfWork, database_session
 
-from .assign import NeighborIndex, decide
+from .assign import LLM, SEED, NeighborIndex, decide
+from .judge import same_happening
 
 WINDOW_DAYS = 3
 
@@ -23,19 +24,34 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
     unassigned = uow.stories.get_unassigned_since(since)
 
     index = NeighborIndex()
-    story_ids = {story_id for _, story_id, _ in assigned}
+    story_ids = {row.story_id for row in assigned}
     stories = uow.stories.get_by_ids(list(story_ids))
-    for article_id, story_id, embedding in assigned:
-        index.add(article_id, story_id, embedding)
+    for row in assigned:
+        index.add(
+            row.article_id,
+            row.story_id,
+            row.embedding,
+            title=row.title,
+            summary=row.summary,
+            published_at=row.published_at,
+            is_seed=row.method == SEED,
+        )
 
     if not unassigned:
         logger.info("No unassigned articles in the %d-day window", WINDOW_DAYS)
         return
 
     seeded = 0
-    joined = 0
+    cosine = 0
+    llm = 0
     for article in unassigned:
-        assignment = decide(article.embedding, index)
+        assignment = decide(
+            article.embedding,
+            index,
+            title=article.title,
+            summary=article.summary,
+            judge=same_happening,
+        )
         if assignment.story_id is None:
             story = Story(
                 title=article.title,
@@ -53,7 +69,15 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
                 )
             )
             stories[story.id] = story
-            index.add(article.id, story.id, article.embedding)
+            index.add(
+                article.id,
+                story.id,
+                article.embedding,
+                title=article.title,
+                summary=article.summary,
+                published_at=article.published_at,
+                is_seed=True,
+            )
             seeded += 1
             continue
 
@@ -69,7 +93,24 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
         )
         if article.published_at > story.last_article_published_at:
             story.last_article_published_at = article.published_at
-        index.add(article.id, story.id, article.embedding)
-        joined += 1
+        index.add(
+            article.id,
+            story.id,
+            article.embedding,
+            title=article.title,
+            summary=article.summary,
+            published_at=article.published_at,
+            is_seed=False,
+        )
+        if assignment.method == LLM:
+            llm += 1
+        else:
+            cosine += 1
 
-    logger.info("Assigned %d articles (%d seeded, %d joined)", seeded + joined, seeded, joined)
+    logger.info(
+        "Assigned %d articles (%d seeded, %d cosine, %d llm)",
+        seeded + cosine + llm,
+        seeded,
+        cosine,
+        llm,
+    )
