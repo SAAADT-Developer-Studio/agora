@@ -4,7 +4,7 @@ Separates concerns and provides clean abstractions for each entity.
 """
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
-from sqlalchemy import exists, func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload, load_only
 from .schema import (
     Article,
@@ -16,7 +16,7 @@ from .schema import (
     Story,
     StoryArticle,
 )
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import NamedTuple, Sequence
 
 
@@ -53,10 +53,15 @@ class ArticleRepository:
         result = self.session.scalars(stmt).all()
         return result
 
-    def get_latest(self, count: int) -> Sequence[Article]:
-        return self.session.scalars(
-            select(Article).order_by(Article.published_at.desc()).limit(count)
-        ).all()
+    def get_latest(
+        self, count: int | None, *, since: datetime | None = None, through: datetime | None = None,
+    ) -> Sequence[Article]:
+        query = select(Article).order_by(Article.published_at.desc()).limit(count)
+        if since is not None:
+            query = query.where(Article.published_at >= since)
+        if through is not None:
+            query = query.where(Article.published_at <= through)
+        return self.session.scalars(query).all()
 
     def get_all_since(self, from_date: datetime) -> Sequence[Article]:
         # limit to 3000 just in case
@@ -124,6 +129,64 @@ class ClusterV2Repository:
         """Bulk insert clusters."""
         self.session.add_all(clusters)
 
+    def get_ranking_batch(
+        self, *, run_id: int, after_id: int = 0, limit: int = 100,
+    ) -> Sequence[ClusterV2]:
+        """Page one clustering run, retaining each member's article history."""
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        return self.session.scalars(
+            select(ClusterV2)
+            .where(ClusterV2.run_id == run_id, ClusterV2.id > after_id)
+            .order_by(ClusterV2.id)
+            .limit(limit)
+            .options(
+                # Previous explanations can be large; scoring replaces them.
+                load_only(ClusterV2.id, ClusterV2.run_id, ClusterV2.created_at),
+                selectinload(ClusterV2.memberships)
+                .selectinload(ArticleCluster.article)
+                .load_only(
+                    Article.id, Article.title, Article.published_at, Article.first_seen_at,
+                    Article.summary, Article.content, Article.categories, Article.llm_rank,
+                    Article.embedding, Article.news_provider_key,
+                )
+                .selectinload(Article.news_provider)
+                .load_only(NewsProvider.key, NewsProvider.rank)
+            )
+        ).all()
+
+
+    def get_expired_ranking_batch(
+        self, *, before: datetime, keep_run_id: int | None, after_id: int = 0, limit: int = 100,
+    ) -> Sequence[ClusterV2]:
+        """Clean ranking data outside the scored run, without loading articles.
+
+        The scored run is left untouched. Other runs are cleared when they are
+        older than ``before`` or already carry a score. This does not depend on
+        scoring having finished.
+        """
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        live_ranking = or_(
+            ClusterV2.rank_score.is_distinct_from(0),
+            ClusterV2.rank_components["status"].astext.is_distinct_from("expired"),
+        )
+        if keep_run_id is None:
+            stale = ClusterV2.created_at < before
+        else:
+            other_run = ClusterV2.run_id != keep_run_id
+            stale = or_(
+                and_(other_run, ClusterV2.created_at < before),
+                and_(other_run, ClusterV2.rank_score.is_not(None)),
+            )
+        return self.session.scalars(
+            select(ClusterV2)
+            .where(stale, live_ranking, ClusterV2.id > after_id)
+            .order_by(ClusterV2.id)
+            .limit(limit)
+            .options(load_only(ClusterV2.id, ClusterV2.created_at, ClusterV2.run_id))
+        ).all()
+
 
 class ClusterRunRepository:
     """Repository for ClusterRun entity operations."""
@@ -134,6 +197,15 @@ class ClusterRunRepository:
     def create(self, cluster_run: ClusterRun) -> None:
         """Create a new cluster run."""
         self.session.add(cluster_run)
+
+    def get_latest_production_id(self) -> int | None:
+        """Newest production clustering run. Ties break toward the higher id."""
+        return self.session.scalar(
+            select(ClusterRun.id)
+            .where(ClusterRun.is_production.is_(True))
+            .order_by(ClusterRun.created_at.desc(), ClusterRun.id.desc())
+            .limit(1)
+        )
 
     def get_latest(self) -> ClusterRun | None:
         """Get the latest cluster run."""

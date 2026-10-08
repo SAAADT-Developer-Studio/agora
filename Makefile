@@ -1,5 +1,5 @@
 .PHONY: scraper scraper-dev test run migrate migrate-rev migrate-check \
-	run-clustering sync-images clusterer clusterer-dev
+	run-clustering rank-clusters export-ranking-sample export-articles sync-images clusterer clusterer-dev
 
 # All targets assume the repo root. One .venv lives here.
 
@@ -32,7 +32,16 @@ migrate-check:
 	uv run --package database alembic -c packages/database/alembic.ini check
 
 run-clustering:
-	uv run --package scraper --directory scraper python3 -m scripts.run_clustering_script
+	uv run --package scraper --directory scraper python3 -m scripts.run_clustering_script $(ARGS)
+
+rank-clusters:
+	uv run --package scraper --directory scraper python3 -m scripts.rank_clusters $(ARGS)
+
+export-ranking-sample: export-articles
+
+export-articles: DAYS ?= 5
+export-articles:
+	uv run --package scraper --directory scraper python3 -m scripts.export_articles --days "$(DAYS)" $(if $(OUTPUT),--output "$(OUTPUT)") $(ARGS)
 
 sync-images:
 	uv run --package scraper --directory scraper python3 -m scripts.sync_images_script

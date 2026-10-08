@@ -127,6 +127,49 @@
         msg: "Alloy container is not running or has crashed."
       when: alloy_info.container.State.Status != "running"
 
+    - name: Install ranking service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/agora-ranking.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Score the latest production clustering run and expire older ranking data
+          Requires=docker.service
+          After=docker.service network-online.target
+
+          [Service]
+          Type=oneshot
+          WorkingDirectory={{ project_dir }}
+          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 30
+          ExecStopPost=-/usr/bin/docker rm -f agora-ranking
+          TimeoutStartSec=27min
+          TimeoutStopSec=45s
+          StandardOutput=journal
+          StandardError=journal
+
+    - name: Install ranking timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/agora-ranking.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Rank clusters every 30 minutes
+
+          [Timer]
+          OnCalendar=*-*-* *:00,30:00 UTC
+          AccuracySec=1s
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Enable ranking every 30 minutes
+      ansible.builtin.systemd_service:
+        name: agora-ranking.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
     - name: Remove dangling images to save space
       community.docker.docker_prune:
         containers: false
