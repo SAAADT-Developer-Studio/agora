@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from sqlalchemy import (
     create_engine,
@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
     UniqueConstraint,
+    CheckConstraint,
     Enum,
     Index,
     text,
@@ -53,6 +54,10 @@ class Article(Base):
     is_paywalled: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     news_provider_key: Mapped[str] = mapped_column(String, ForeignKey("news_provider.key"))
+    # Unknown for historical rows; the scraper records discovery time for new articles.
+    first_seen_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     news_provider: Mapped["NewsProvider"] = relationship(
         "NewsProvider", back_populates="articles", init=False
     )
@@ -117,7 +122,7 @@ class ClusterRun(Base):
     params: Mapped[Optional[dict]] = mapped_column(JSONB)
     is_production: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now, init=False
+        DateTime(timezone=True), default_factory=lambda: datetime.now(timezone.utc), init=False
     )
 
     clusters: Mapped[List["ClusterV2"]] = relationship(
@@ -145,6 +150,39 @@ class Cluster(Base):
         return f"<Cluster(id={self.id}, title={self.title}, slug={self.slug})>"
 
 
+class RankingRun(Base):
+    __tablename__ = "ranking_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_days: Mapped[int] = mapped_column(Integer)
+    algorithm_version: Mapped[str] = mapped_column(String)
+    config: Mapped[dict] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default_factory=lambda: datetime.now(timezone.utc)
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
+    status: Mapped[str] = mapped_column(String, default="running")
+    scored_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    expired_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    failed_cluster_id: Mapped[Optional[int]] = mapped_column(Integer, default=None)
+    error: Mapped[Optional[str]] = mapped_column(String, default=None)
+
+    __table_args__ = (
+        Index("ix_ranking_run_started_at", "started_at"),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed', 'interrupted')",
+            name="ck_ranking_run_status",
+        ),
+        CheckConstraint("window_days > 0", name="ck_ranking_run_window_days"),
+        CheckConstraint(
+            "scored_count >= 0 AND expired_count >= 0 AND skipped_count >= 0",
+            name="ck_ranking_run_counts",
+        ),
+    )
+
+
 class ClusterV2(Base):
     __tablename__ = "cluster_v2"
 
@@ -153,6 +191,16 @@ class ClusterV2(Base):
     slug: Mapped[Optional[str]] = mapped_column(String, unique=True)
 
     run_id: Mapped[int] = mapped_column(ForeignKey("cluster_run.id", ondelete="CASCADE"))
+    rank_score: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    ranked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
+    rank_components: Mapped[Optional[dict]] = mapped_column(JSONB, default=None)
+    rank_version: Mapped[Optional[str]] = mapped_column(String, default=None)
+    rank_config: Mapped[Optional[dict]] = mapped_column(JSONB, default=None)
+    rank_category: Mapped[Optional[str]] = mapped_column(String, default=None)
+    ranking_run_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ranking_run.id", ondelete="SET NULL", name="fk_cluster_v2_ranking_run_id"),
+        default=None,
+    )
     wiki_image_urls: Mapped[List[str]] = mapped_column(
         ARRAY(String),
         default_factory=list,
@@ -174,7 +222,7 @@ class ClusterV2(Base):
     run: Mapped["ClusterRun"] = relationship("ClusterRun", back_populates="clusters", init=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.now, init=False
+        DateTime(timezone=True), default_factory=lambda: datetime.now(timezone.utc), init=False
     )
 
     # New: historical assignments
@@ -185,7 +233,12 @@ class ClusterV2(Base):
         init=False,
     )
 
-    __table_args__ = (Index("ix_cluster_v2_run_id", "run_id"),)
+    __table_args__ = (
+        Index("ix_cluster_v2_run_id", "run_id"),
+        Index("ix_cluster_v2_created_at_id", "created_at", "id"),
+        Index("ix_cluster_v2_ranking_run_id", "ranking_run_id"),
+        CheckConstraint("rank_score BETWEEN 0 AND 1", name="ck_cluster_v2_rank_score"),
+    )
 
     def __repr__(self):
         return f"<ClusterV2(id={self.id}, title={self.title}, slug={self.slug})>"
@@ -198,6 +251,7 @@ class ArticleCluster(Base):
     article_id: Mapped[int] = mapped_column(ForeignKey("article.id", ondelete="CASCADE"))
     cluster_id: Mapped[int] = mapped_column(ForeignKey("cluster_v2.id", ondelete="CASCADE"))
     run_id: Mapped[int] = mapped_column(ForeignKey("cluster_run.id", ondelete="CASCADE"))
+    membership_confidence: Mapped[Optional[float]] = mapped_column(Float, default=None)
 
     article: Mapped["Article"] = relationship(
         "Article", back_populates="cluster_assignments", init=False
@@ -211,6 +265,10 @@ class ArticleCluster(Base):
         # Enforce ≤1 primary assignment per article per run
         # via a partial unique index in Alembic (see migration).
         UniqueConstraint("article_id", "cluster_id", "run_id", name="uq_article_cluster_run"),
+        CheckConstraint(
+            "membership_confidence BETWEEN 0 AND 1",
+            name="ck_article_cluster_membership_confidence",
+        ),
         Index("ix_article_cluster_cluster_id", "cluster_id"),
         Index("ix_article_cluster_run_id", "run_id"),
     )

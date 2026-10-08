@@ -12,21 +12,38 @@ from database.unit_of_work import database_session, UnitOfWork
 from database.schema import Article
 
 
-def cluster_impl(embeddings: list[np.ndarray]) -> list[int]:
-    hdb = hdbscan.HDBSCAN(
-        min_samples=2,
-        min_cluster_size=2,
-        cluster_selection_method="leaf",
-        cluster_selection_epsilon=0.2,
-    ).fit(embeddings)
+HDBSCAN_PARAMS = {
+    "min_samples": 2,
+    "min_cluster_size": 2,
+    "cluster_selection_method": "leaf",
+    "cluster_selection_epsilon": 0.2,
+}
 
-    labels: list[int] = hdb.labels_.astype(int)
-    return labels
+
+def cluster_impl_with_confidence(
+    embeddings: list[np.ndarray],
+) -> tuple[list[int], list[float | None]]:
+    # There is no fitted membership strength when there are too few points to cluster.
+    if len(embeddings) < 2:
+        return [-1] * len(embeddings), [None] * len(embeddings)
+    hdb = hdbscan.HDBSCAN(**HDBSCAN_PARAMS).fit(embeddings)
+    labels = hdb.labels_.astype(int).tolist()
+    # Noise becomes a singleton below. HDBSCAN did not assign it to that new
+    # cluster, so its membership is unknown, not a fabricated perfect match.
+    confidence = [
+        float(probability) if label != -1 else None
+        for label, probability in zip(labels, hdb.probabilities_, strict=True)
+    ]
+    return labels, confidence
+
+
+def cluster_impl(embeddings: list[np.ndarray]) -> list[int]:
+    return cluster_impl_with_confidence(embeddings)[0]
 
 
 def assign_singletons(labels: list[int]) -> list[int]:
     new_labels = labels.copy()
-    cluster_id = max(labels) + 1
+    cluster_id = max(labels, default=-1) + 1
     for i, label in enumerate(labels):
         if label == -1:
             new_labels[i] = cluster_id
@@ -34,14 +51,22 @@ def assign_singletons(labels: list[int]) -> list[int]:
     return new_labels
 
 
-def cluster(articles: Sequence[Article]) -> dict[int, list[Article]]:
+def cluster_with_confidence(
+    articles: Sequence[Article],
+) -> tuple[dict[int, list[Article]], dict[int, float | None]]:
     embeddings = [np.array(article.embedding, dtype=np.float64) for article in articles]
-    labels = assign_singletons(cluster_impl(embeddings))
+    raw_labels, probabilities = cluster_impl_with_confidence(embeddings)
+    labels = assign_singletons(raw_labels)
     clusters: dict[int, list[Article]] = {}
-    for label, article in zip(labels, articles):
-        assert label != -1, "Label -1 should not be present after assign_singletons"
+    confidence_by_article: dict[int, float | None] = {}
+    for label, article, confidence in zip(labels, articles, probabilities, strict=True):
         clusters.setdefault(label, []).append(article)
-    return clusters
+        confidence_by_article[article.id] = confidence
+    return clusters, confidence_by_article
+
+
+def cluster(articles: Sequence[Article]) -> dict[int, list[Article]]:
+    return cluster_with_confidence(articles)[0]
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import asyncio
 import time
 import logging
+from datetime import datetime, timezone
 from typing import cast
 from langchain_core.embeddings import Embeddings
 from langchain.chat_models import BaseChatModel
@@ -31,6 +32,7 @@ async def process(
 
     start_time = time.perf_counter()
     article_metadatas = await discover_articles(providers)
+    first_seen_at = datetime.now(timezone.utc)
 
     providers_map = {provider.key: provider for provider in PROVIDERS}
 
@@ -98,6 +100,7 @@ async def process(
                 summary=article_analysis.summary,
                 llm_rank=article_analysis.rank,
                 published_at=article_metadata.published_at,
+                first_seen_at=first_seen_at,
                 embedding=embedding,
                 news_provider_key=article_metadata.provider_key,
                 image_urls=image_urls,

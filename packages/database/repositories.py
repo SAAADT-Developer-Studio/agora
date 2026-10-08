@@ -4,7 +4,7 @@ Separates concerns and provides clean abstractions for each entity.
 """
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload, load_only
 from .schema import (
     Article,
@@ -53,10 +53,15 @@ class ArticleRepository:
         result = self.session.scalars(stmt).all()
         return result
 
-    def get_latest(self, count: int) -> Sequence[Article]:
-        return self.session.scalars(
-            select(Article).order_by(Article.published_at.desc()).limit(count)
-        ).all()
+    def get_latest(
+        self, count: int | None, *, since: datetime | None = None, through: datetime | None = None,
+    ) -> Sequence[Article]:
+        query = select(Article).order_by(Article.published_at.desc()).limit(count)
+        if since is not None:
+            query = query.where(Article.published_at >= since)
+        if through is not None:
+            query = query.where(Article.published_at <= through)
+        return self.session.scalars(query).all()
 
     def get_all_since(self, from_date: datetime) -> Sequence[Article]:
         # limit to 3000 just in case
@@ -123,6 +128,58 @@ class ClusterV2Repository:
     def bulk_create(self, clusters: list[ClusterV2]) -> None:
         """Bulk insert clusters."""
         self.session.add_all(clusters)
+
+    def get_ranking_batch(
+        self, *, since: datetime, through: datetime, after_id: int = 0, limit: int = 100,
+    ) -> Sequence[ClusterV2]:
+        """Page through recent snapshots, retaining their complete article history."""
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        return self.session.scalars(
+            select(ClusterV2)
+            .where(
+                ClusterV2.created_at >= since,
+                ClusterV2.created_at <= through,
+                ClusterV2.id > after_id,
+            )
+            .order_by(ClusterV2.id)
+            .limit(limit)
+            .options(
+                # Previous explanations can be large; scoring replaces them.
+                load_only(ClusterV2.id, ClusterV2.run_id, ClusterV2.created_at),
+                selectinload(ClusterV2.memberships)
+                .selectinload(ArticleCluster.article)
+                .load_only(
+                    Article.id, Article.title, Article.published_at, Article.first_seen_at,
+                    Article.summary, Article.content, Article.categories, Article.llm_rank,
+                    Article.embedding, Article.news_provider_key,
+                )
+                .selectinload(Article.news_provider)
+                .load_only(NewsProvider.key, NewsProvider.rank)
+            )
+        ).all()
+
+
+    def get_expired_ranking_batch(
+        self, *, before: datetime, after_id: int = 0, limit: int = 100,
+    ) -> Sequence[ClusterV2]:
+        """Expire old snapshots once, without loading their articles or explanations."""
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        return self.session.scalars(
+            select(ClusterV2)
+            .where(
+                ClusterV2.created_at < before,
+                ClusterV2.id > after_id,
+                or_(
+                    ClusterV2.rank_score.is_distinct_from(0),
+                    ClusterV2.rank_components["status"].astext.is_distinct_from("expired"),
+                ),
+            )
+            .order_by(ClusterV2.id)
+            .limit(limit)
+            .options(load_only(ClusterV2.id, ClusterV2.created_at))
+        ).all()
 
 
 class ClusterRunRepository:

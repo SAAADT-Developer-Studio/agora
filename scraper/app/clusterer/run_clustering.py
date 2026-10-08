@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from langchain.chat_models import BaseChatModel
 
-from app.clusterer.cluster import cluster
+from app.clusterer.cluster import HDBSCAN_PARAMS, cluster_with_confidence
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
 from app.clusterer.hash_cluster import hash_cluster
 from database.schema import Article, ArticleCluster, ClusterRun, ClusterV2
@@ -178,7 +178,10 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
     current_run = ClusterRun(
         algo_version="hdbscan-1.0.0",
         is_production=True,
-        params=None,
+        params={
+            "hdbscan": dict(HDBSCAN_PARAMS), "noise_policy": "singleton",
+            "active_window_days": 3, "article_limit": 6000,
+        },
     )
     uow.cluster_runs.create(current_run)
     uow.session.flush()
@@ -211,7 +214,7 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
         logging.warning("No articles to cluster. Exiting.")
         return
 
-    cluster_articles_map = cluster(articles)
+    cluster_articles_map, membership_confidences = cluster_with_confidence(articles)
 
     clusters_pending_title_generation: list[list[Article]] = []
     hash_to_cluster_mapping = get_hash_to_cluster_mapping(prev_clusters)
@@ -268,6 +271,7 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
                     article_id=article.id,
                     cluster_id=cluster_v2.id,
                     run_id=current_run.id,
+                    membership_confidence=membership_confidences[article.id],
                 )
             )
         new_clusters.append(cluster_v2)
@@ -279,38 +283,55 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
 
 # this is a function to bootstrap the clustering run for existing articles
 # in case something goes terribly wrong
-async def bootstrap_cluster_run(uow: UnitOfWork) -> None:
-    print("Bootstrapping clustering run...")
+async def bootstrap_cluster_run(
+    uow: UnitOfWork, *, article_limit: int | None = 3000, enrich_images: bool = True,
+    days: int | None = None,
+) -> None:
+    if days is None:
+        articles = uow.articles.get_latest(article_limit)
+    else:
+        if days < 1:
+            raise ValueError("days must be positive")
+        through = datetime.now(timezone.utc)
+        articles = uow.articles.get_latest(article_limit, since=through - timedelta(days=days), through=through)
+    logging.info("Bootstrapping clustering from %d articles", len(articles))
+    if not articles:
+        logging.info("No articles to cluster")
+        return
     cluster_run = ClusterRun(
         algo_version="hdbscan-1.0.0",
         is_production=True,
-        params=None,
+        params={
+            "hdbscan": dict(HDBSCAN_PARAMS), "noise_policy": "singleton",
+            "article_limit": article_limit,
+            "article_count": len(articles),
+            "article_window_days": days,
+        },
     )
     uow.cluster_runs.create(cluster_run)
     # Flush to get the cluster_run.id assigned by the database
     uow.session.flush()
 
-    articles = uow.articles.get_latest(3000)
-
-    cluster_articles_map = cluster(articles)
+    cluster_articles_map, membership_confidences = cluster_with_confidence(articles)
     cluster_payloads: list[ClusterPayload] = [
         (cluster_articles[0].title, cluster_articles, [], [], None, None)
         for cluster_articles in cluster_articles_map.values()
     ]
-    cluster_payloads = await enrich_cluster_payloads_with_wikimedia(cluster_payloads)
+    if enrich_images:
+        cluster_payloads = await enrich_cluster_payloads_with_wikimedia(cluster_payloads)
     clusters: list[ClusterV2] = []
 
-    for (
+    for index, (
         title,
         cluster_articles,
         wiki_image_urls,
         wiki_image_metadata,
         wiki_image_lookup_at,
         wiki_image_last_attempt_at,
-    ) in cluster_payloads:
+    ) in enumerate(cluster_payloads):
         cluster_v2 = ClusterV2(
             title=title,
-            slug=slugify(title),
+            slug=f"{slugify(title)}-{cluster_run.id}-{index}",
             run_id=cluster_run.id,
             wiki_image_urls=wiki_image_urls,
             wiki_image_metadata=wiki_image_metadata,
@@ -324,9 +345,11 @@ async def bootstrap_cluster_run(uow: UnitOfWork) -> None:
                     article_id=article.id,
                     cluster_id=cluster_v2.id,
                     run_id=cluster_run.id,
+                    membership_confidence=membership_confidences[article.id],
                 )
             )
     uow.clusters_v2.bulk_create(clusters)
+    logging.info("Created %d clusters in run %s", len(clusters), cluster_run.id)
 
 
 async def migrate_clusters(uow: UnitOfWork) -> None:
@@ -334,7 +357,7 @@ async def migrate_clusters(uow: UnitOfWork) -> None:
     cluster_run = ClusterRun(
         algo_version="hdbscan-1.0.0",
         is_production=True,
-        params=None,
+        params={"mode": "legacy_cluster_import"},
     )
     uow.cluster_runs.create(cluster_run)
     # Flush to get the cluster_run.id assigned by the database
