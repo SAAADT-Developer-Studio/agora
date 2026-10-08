@@ -79,6 +79,17 @@
       register: pull_result
       changed_when: "'Downloaded' in pull_result.stdout or 'Pull complete' in pull_result.stdout"
 
+    # The clusterer schedule is APScheduler inside the container, not a host
+    # timer or cron. Stopping the compose service stops that loop. Already
+    # stopped or never created containers are a no-op. docker compose up -d
+    # below starts them again on the new images.
+    - name: Stop scraper and clusterer before migrations
+      ansible.builtin.command:
+        cmd: docker compose stop --timeout 30 scraper clusterer
+        chdir: "{{ project_dir }}"
+      register: app_stop
+      changed_when: "'Stopping' in app_stop.stdout or 'Stopping' in app_stop.stderr"
+
     - name: Apply database migrations
       ansible.builtin.command:
         cmd: docker compose run --rm --no-deps scraper alembic -c /app/packages/database/alembic.ini upgrade head
