@@ -116,7 +116,7 @@ config = RankingConfig(
             "weak_relation_penalty": 0.5,
             "temporal_half_life_hours": 72.0,
             "temporal_penalty": 0.25,
-            "gate_power": 2.0,
+            "gate_power": 1.0,
         },
     },
 )
@@ -780,12 +780,13 @@ dimensions remain in the confidence calculation as missing semantic comparisons;
 they are not silently dropped from the denominator. Input vectors must come from
 the same embedding model: equal dimension alone cannot establish that.
 
-For each compatible report, the scorer constructs a weighted centroid of the
-**other** compatible reports and measures cosine similarity to that centroid.
-Leaving the article itself out prevents a singleton or a tiny unrelated pair
-from getting a strong match merely because its own vector is in the centroid.
-A singleton has no peer comparison. If multiple available peer directions cancel,
-the scorer treats that as measured incoherence rather than missing information.
+For each compatible report, the scorer constructs a weighted centroid of
+compatible reports from **other publishers** and measures cosine similarity to
+that centroid. Posts from the same outlet are not peers, so one outlet cannot
+raise confidence by agreeing with itself. A single-publisher cluster, including
+a single article, has no such comparison and scores 0.5. If multiple available
+peer directions cancel, the scorer treats that as measured incoherence rather
+than missing information.
 
 The cosine is mapped to a unit score:
 
@@ -795,7 +796,8 @@ similarity_score = clip((cosine - outlier_similarity)
 ```
 
 Defaults give zero at cosine 0.4 or lower and full semantic coherence at 0.9 or
-higher. A report is weakly related below 0.75 and an outlier below 0.4. Missing,
+higher. A report is flagged weakly related below 0.75 and an outlier below 0.4. Those
+flags do not change the score. Missing,
 zero, incompatible, and unpaired embeddings use `unknown_similarity_score=0.5`,
 with explicit per-report status and fallback flags. They are not automatically
 classified as observed outliers or weak relations.
@@ -814,11 +816,11 @@ signal_confidence_score = 0.7 * semantic_coherence_score
                         + 0.3 * membership_confidence_score
 ```
 
-A report is an outlier or weakly related when **either measured signal** crosses
-its corresponding threshold. Outliers are also included in the weak proportion.
-High membership values cannot conceal poor embedding matches, and matching
-embeddings cannot conceal explicitly low membership confidence. The thresholds
-continue to drive these penalties independently of the signal blend weight.
+A report is flagged an outlier or weakly related when either measured signal
+crosses its corresponding threshold. Outliers are also included in the weak
+proportion. Those flags are diagnostics. The score uses the continuous
+similarity and membership values in `signal_confidence_score`, then the temporal
+multiplier. A hard step at 0.75 is not applied.
 
 ### Temporal coherence and combined confidence
 
@@ -829,11 +831,12 @@ is the weighted mean absolute distance from this center, in elapsed UTC hours:
 temporal_coherence_score = 2 ** (-mean_temporal_deviation_hours / 72)
 temporal_multiplier = 1 - 0.25 * (1 - temporal_coherence_score)
 
-cluster_confidence_score = signal_confidence_score
-                         * (1 - outlier_proportion)
-                         * (1 - 0.5 * weakly_related_proportion)
-                         * temporal_multiplier
+cluster_confidence_score = signal_confidence_score * temporal_multiplier
 ```
+
+Outlier and weak-relation proportions remain on the result for inspection. They
+are not additional multipliers. `weak_relation_penalty` is still accepted so
+older configuration files validate, and it does not change the score.
 
 An event with reports concentrated in time has temporal coherence near one.
 Widely scattered reports reduce confidence. Shifting every report equally into
@@ -844,10 +847,10 @@ publisher authority, and source flags do not directly increase confidence.
 
 For three matching embeddings, membership confidence 0.9, and simultaneous
 publication, confidence is 0.97. If membership values are absent, the same reports
-receive 0.85 with membership fallback flags. A singleton with neither membership
-confidence nor a peer comparison receives 0.5. A cluster where every report is a
-measured outlier receives zero. No eligible reports also yields zero, explicitly
-marked `basis="unavailable"` instead of an unknown-data fallback.
+receive 0.85 with membership fallback flags. A single article, and any
+single-publisher cluster, receives 0.5 even when membership confidence is
+present. No eligible reports yields zero, explicitly marked `basis="unavailable"`
+instead of an unknown-data fallback.
 
 `ClusterConfidenceResult` exposes all signal scores, data-availability fractions,
 weighted outlier and weak-relation proportions, chosen dimension, compared report
@@ -868,12 +871,17 @@ base score. It is not another positive term in a weighted sum:
 final_score = base_score * freshness_score * cluster_confidence_score ** gate_power
 ```
 
-The default `gate_power=2` makes confidence 0.2 cap the final score at 0.04,
-even when every other component is maximal. Confidence 0.5 caps it at 0.25;
-confidence 1 preserves the base score. `gate_power` must be at least one, so
-the gate cannot weaken this ceiling or boost the base score. Invalid, nonfinite,
-or unbounded base scores are rejected instead of allowing large article totals
-to bypass the gate.
+The default `gate_power=1` multiplies by confidence itself. Confidence 0.2 caps
+the final score at 0.2 even when every other component is maximal. Confidence
+0.5 caps it at 0.5; confidence 1 preserves the base score. `gate_power` must be
+at least one, so the gate cannot weaken this ceiling or boost the base score.
+Invalid, nonfinite, or unbounded base scores are rejected instead of allowing
+large article totals to bypass the gate. Similarity is a continuous ramp from
+the outlier threshold to the strong threshold. Weak and outlier flags are still
+recorded, but they do not apply a step penalty, so a cosine of 0.749 and 0.751
+do not jump the score. Peer similarity uses other publishers only. A cluster
+with a single publisher, including a single article and one outlet posting many
+times, has confidence 0.5.
 
 `apply_confidence_gate(base_score, cluster_confidence_score, config)` exposes
 the confidence-only numerical operation. Since RANK-10, `finalize_ranking()` first
@@ -912,11 +920,12 @@ base_score = 0.25 * article_contribution_score
            + 0.25 * momentum_score
            + 0.25 * semantic_importance_score
 
-cluster_score = base_score * freshness_score * cluster_confidence_score ** 2
+cluster_score = base_score * freshness_score * cluster_confidence_score ** gate_power
 ```
 
 The final score, every component, the base, and both multiplicative factors are
-in [0, 1]. The confidence exponent comes from the existing `gate_power` policy.
+in [0, 1]. `gate_power` defaults to 1. The confidence exponent comes from the
+existing `gate_power` policy.
 No additive freshness or confidence bonus can counteract a weak gate, and no
 other score can push the final result above either gate's ceiling.
 
@@ -1067,28 +1076,34 @@ variables, and needs no LLM API keys.
 `{"version": "my-config-v1", "parameters": {...}}` contract; omitted settings
 are materialized and saved, and unknown sections or invalid values are rejected.
 
-The default selection is **every cluster snapshot created in the preceding 30
-days**, across all clustering runs, including non-production runs. It is a rolling
-30-day window, not the previous calendar month or one version of each event.
-Historical snapshots of the same event are scored separately. All member articles
-are loaded, including articles older than the window. Each invocation uses one
-UTC evaluation time and excludes snapshots created after that time.
+This score is **observation-only**. Nothing in the reader, feed order, or page
+cache reads it to decide what a person sees. The scheduled job and the hook at
+the end of `run_clustering` only write ranking columns and `ranking_run` rows.
 
-Snapshots whose `cluster_v2.created_at` is strictly older than the window get
-`rank_score = 0`, including previously unranked history. This is a policy zero:
-`rank_components` is replaced with an `expired` marker, cutoff and evaluation time,
-and `rank_version` becomes `expired-v1`. Old article factors are not recalculated
-or fabricated. Already expired zeroes are left untouched on subsequent runs.
-Changing `--days` changes both the scoring window and the expiry cutoff; widening
-it can bring an expired snapshot back into scoring. Article dates still determine
-story freshness inside the engine; creating a new snapshot does not refresh a story.
+The default selection is the **latest production clustering run** (`cluster_run.is_production`,
+newest `created_at`, then highest id). That is the run the site shows. Clusters
+from older runs, non-production runs, and the previous 30 days of history are
+not scored. `--run-id` scores one specific run for backfill; the default remains
+the latest production run. `run_clustering` also ranks the run it just wrote.
+The timer remains the fallback when that hook does not run.
+
+Expiry is a separate pass and does not wait for scoring. It leaves the latest
+production run untouched. Other runs are cleared when their snapshot is older
+than `--days` (default 30) or they already have a score. Already expired zeroes
+are left untouched. Widening `--days` does not start scoring an older run;
+pass `--run-id` to backfill one. Article dates still determine story freshness
+inside the engine.
 
 The command pages by cluster ID, saves at most 100 clusters per transaction, and
-reports progress. Empty clusters remain unranked and are reported as skipped.
-Invalid input aborts and rolls back the current batch; completed batches remain
-saved. Rerunning replaces each cluster's latest result and creates a new
-`ranking_run` record. `--dry-run` calculates scores and counts would-be expirations
-without saving anything, including run records.
+reports progress. Empty clusters and clusters that cannot be scored (empty title,
+non-finite embedding, membership from another run) are skipped. The skip is
+logged with the cluster id and the error, the rest of the run continues, and
+`ranking_run.skipped_count` includes them. A fatal error still rolls back the
+current batch; completed batches remain saved. Rerunning replaces each current
+cluster's latest summary and creates a new `ranking_run` record. `--dry-run`
+calculates scores and counts would-be expirations without saving anything,
+including run records. The full explanation is returned to the caller on a
+dry-run and is not written to `cluster_v2`.
 
 Each run records UTC `started_at`, `evaluated_at`, `finished_at`, status, window,
 engine version, effective configuration, and committed scored/expired/skipped
@@ -1135,36 +1150,30 @@ Saved cluster fields:
 - `ranked_at`: timezone-aware evaluation time.
 - `ranking_run_id`: run that last scored or expired this snapshot; legacy results
   remain NULL until processed.
-- `rank_components`: all seven normalized components, base score, weighted terms,
-  applied freshness/confidence factors, component versions, decay anchor and
-  latest meaningful-development time when available. Its `explanation` key also
-  contains the complete JSON-serialized `ClusterRankingExplanation`: selected
-  article-strength reports; per-article contributions and discounts; syndication
-  families; publisher coverage and authority; momentum windows and decisions;
-  newsworthiness selection; freshness anchors and decisions; confidence inputs
-  and penalties; excluded article IDs and fallback reasons.
+- `rank_components`: summary fields only. The seven normalized components, base
+  score, weighted terms, applied freshness/confidence factors, component versions,
+  decay anchor, and latest meaningful-development time when available. The full
+  per-article explanation is not stored.
 - `rank_version`: engine algorithm version.
-- `rank_config`: config version and complete effective settings, including defaults.
+- `ranking_run_id`: the run whose `ranking_run.config` holds the effective
+  configuration, including defaults. Configuration is not copied onto each cluster.
 - `rank_category`: category used for decay. One primary-category vote per publisher
   from its earliest categorized eligible report, excluding detected family copies;
   ties break alphabetically. Unknown-content reports may vote. Missing category
   uses the engine's configured default half-life.
 
-The full explanation is saved with each score, using the same evaluation time
-and effective configuration. Existing summary keys remain available. This uses
-the existing JSONB column. Older scores inside the active window gain
-the detailed explanation when `make rank-clusters` is rerun; dry runs do not save
-it. Reranking replaces the previous score and explanation rather than keeping a
-history. Article text and embedding vectors remain in their source tables; the
-explanation stores the calculated factors and article IDs, not a full input copy.
+`rank_and_save_cluster(..., dry_run=True)` returns the full `ClusterRankingExplanation`
+and writes nothing. A real save stores the summary above. Reranking replaces that
+summary rather than keeping a history. Article text and embedding vectors remain
+in their source tables.
 
-Inspect the saved breakdown for one cluster:
+Inspect one cluster and the configuration for its run:
 
 ```sql
-SELECT rank_score, ranked_at, rank_config,
-       jsonb_pretty(rank_components -> 'explanation') AS explanation
-FROM cluster_v2
-WHERE id = :cluster_id;
+SELECT c.rank_score, c.ranked_at, c.rank_components, r.config
+FROM cluster_v2 c
+LEFT JOIN ranking_run r ON r.id = c.ranking_run_id
+WHERE c.id = :cluster_id;
 ```
 
 New scraping runs record article `first_seen_at` after discovery and before

@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from database.schema import Article, ArticleCluster, ClusterV2, NewsProvider
 from app.ranking.contracts import RankableArticle, RankableCluster, RankingConfig
-from app.ranking.engine import ClusterRankingExplanation
+from app.ranking.job import score_cluster
 from app.ranking.persistence import (
     derive_cluster_category, prepare_cluster, rank_and_save_cluster, resolve_ranking_config,
 )
@@ -78,8 +78,8 @@ def test_save_records_explainable_bounded_score_and_resolved_configuration():
     assert stored.ranked_at == NOW
     assert stored.rank_version == result.algorithm_version
     assert stored.rank_category == "sport"
-    assert stored.rank_config["parameters"]["freshness"]["category_half_lives_hours"]["sport"] == 6
-    assert stored.rank_config["version"] == "test"
+    assert not hasattr(stored, "rank_config")
+    assert "explanation" not in stored.rank_components
     for name, value in result.result.components.model_dump().items():
         assert stored.rank_components[name] == value
     assert stored.rank_components["base_score"] * stored.rank_components["freshness_factor"] * stored.rank_components["confidence_factor"] == pytest.approx(stored.rank_score)
@@ -90,7 +90,7 @@ def test_dry_run_does_not_overwrite_any_existing_rank_data():
     config = resolve_ranking_config(RankingConfig(version="test"))
     rank_and_save_cluster(stored, NOW, config)
     original = {name: getattr(stored, name) for name in (
-        "rank_score", "ranked_at", "rank_version", "rank_config", "rank_components", "rank_category",
+        "rank_score", "ranked_at", "rank_version", "rank_components", "rank_category",
     )}
     result = rank_and_save_cluster(stored, NOW + timedelta(days=7), config, dry_run=True)
     assert result.result.score < original["rank_score"]
@@ -116,9 +116,9 @@ def test_saved_explanation_survives_json_with_discounts_fallbacks_and_exclusions
 
     calculated = rank_and_save_cluster(stored, NOW, RankingConfig(version="test"))
     payload = json.loads(json.dumps(stored.rank_components, allow_nan=False))
-    saved = ClusterRankingExplanation.model_validate(payload["explanation"])
-
-    assert saved == calculated
+    assert "explanation" not in payload
+    assert len(json.dumps(payload)) < len(calculated.model_dump_json())
+    saved = calculated
     assert saved.result.score == stored.rank_score
     assert sum(term.weighted_score for term in saved.terms) * saved.freshness_factor * saved.confidence_factor == pytest.approx(stored.rank_score)
     copy = next(item for item in saved.article_contribution.articles if item.article_id == 2)
@@ -140,20 +140,20 @@ def test_saved_explanation_survives_json_with_discounts_fallbacks_and_exclusions
         assert getattr(saved, name).evaluated_at == stored.ranked_at
 
 
-def test_reranking_replaces_legacy_summary_with_current_full_explanation():
+def test_reranking_replaces_the_summary_without_storing_the_full_explanation():
     stored = stored_cluster()
     stored.rank_components = {"coverage_score": 0.75}
     config = RankingConfig(version="test")
-    rank_and_save_cluster(stored, NOW, config)
-    previous = stored.rank_components
+    first = rank_and_save_cluster(stored, NOW, config)
+    previous_score = stored.rank_score
 
     later = NOW + timedelta(days=7)
     result = rank_and_save_cluster(stored, later, config)
-    saved = ClusterRankingExplanation.model_validate(stored.rank_components["explanation"])
-    assert saved == result
-    assert saved.result.evaluated_at == later
-    assert saved.result.score < previous["explanation"]["result"]["score"]
-    assert ClusterRankingExplanation.model_validate(previous["explanation"]).result.evaluated_at == NOW
+    assert "explanation" not in stored.rank_components
+    assert stored.ranked_at == later
+    assert stored.rank_score < previous_score
+    assert first.result.evaluated_at == NOW
+    assert result.result.evaluated_at == later
 
 
 def test_missing_membership_stays_unknown_and_future_observation_is_excluded():
@@ -213,3 +213,30 @@ def test_empty_cluster_is_not_given_a_fake_score():
     stored.memberships.clear()
     with pytest.raises(ValidationError):
         prepare_cluster(stored, NOW, RankingConfig(version="test"))
+
+
+def test_broken_cluster_is_skipped_and_the_rest_score(caplog):
+    config = resolve_ranking_config(RankingConfig(version="test"))
+    empty_title = stored_cluster(cluster_id=1)
+    empty_title.memberships[0].article.title = ""
+    good = stored_cluster(cluster_id=2)
+    nan_embedding = stored_cluster(cluster_id=3)
+    nan_embedding.memberships[0].article.embedding = [float("nan"), 0.0]
+    wrong_run = stored_cluster(cluster_id=4)
+    wrong_run.memberships[0].run_id = 99
+    later = stored_cluster(cluster_id=5)
+
+    outcomes = [
+        score_cluster(cluster, NOW, config, ranking_run_id=7)
+        for cluster in (empty_title, good, nan_embedding, wrong_run, later)
+    ]
+
+    assert outcomes == ["skipped", "scored", "skipped", "skipped", "scored"]
+    assert empty_title.rank_score is None
+    assert nan_embedding.rank_score is None
+    assert wrong_run.rank_score is None
+    assert good.rank_score is not None
+    assert later.rank_score is not None
+    assert good.ranking_run_id == later.ranking_run_id == 7
+    for cluster_id in (1, 3, 4):
+        assert f"Skipping cluster {cluster_id}" in caplog.text

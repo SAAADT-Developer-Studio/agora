@@ -170,6 +170,59 @@ def filter_old_clusters(clusters: Sequence[ClusterV2], days: int = 3) -> Sequenc
     return filtered_clusters
 
 
+def _observe_ranking(uow: UnitOfWork, run_id: int) -> None:
+    """Score the run that was just written. Observation only; clustering still commits.
+
+    The scheduled ranking job remains the fallback and also expires older runs.
+    """
+    try:
+        from datetime import datetime, timezone
+
+        from database.schema import RankingRun
+        from app.ranking.contracts import RankingConfig
+        from app.ranking.engine import ALGORITHM_VERSION
+        from app.ranking.job import score_run
+        from app.ranking.persistence import DEFAULT_CONFIG_VERSION, resolve_ranking_config
+
+        from sqlalchemy import text
+        from scripts.rank_clusters import RANKING_LOCK_KEY
+
+        config = resolve_ranking_config(RankingConfig(version=DEFAULT_CONFIG_VERSION))
+        evaluated_at = datetime.now(timezone.utc)
+        # Savepoint keeps a ranking or lock failure from aborting the clustering transaction.
+        with uow.session.begin_nested():
+            if not uow.session.scalar(
+                text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": RANKING_LOCK_KEY},
+            ):
+                logging.info(
+                    "Ranking lock is busy; the scheduled job will score clustering run %s", run_id,
+                )
+                return
+            ranking_run = RankingRun(
+                evaluated_at=evaluated_at, started_at=evaluated_at, window_days=30,
+                algorithm_version=ALGORITHM_VERSION, config=config.model_dump(mode="json"),
+            )
+            uow.session.add(ranking_run)
+            uow.session.flush()
+            scored, skipped = score_run(
+                uow.session, run_id, evaluated_at, config,
+                ranking_run_id=ranking_run.id, dry_run=False,
+            )
+            ranking_run.scored_count = scored
+            ranking_run.skipped_count = skipped
+            ranking_run.status = "succeeded"
+            ranking_run.finished_at = datetime.now(timezone.utc)
+        logging.info(
+            "Observation ranking for clustering run %s scored %d and skipped %d",
+            run_id, scored, skipped,
+        )
+    except Exception:
+        logging.exception(
+            "Observation ranking failed for clustering run %s; cluster rows are still saved",
+            run_id,
+        )
+
+
 async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
     prev_run = uow.cluster_runs.get_latest()
     if prev_run is None:
@@ -279,6 +332,9 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
 
     logging.info(f"Created {len(generated_titles)} new clusters.")
     logging.info(f"Kept {len(final) - len(generated_titles)} clusters.")
+    # Flush before the savepoint so a ranking failure cannot roll the new rows back.
+    uow.session.flush()
+    _observe_ranking(uow, current_run.id)
 
 
 # this is a function to bootstrap the clustering run for existing articles

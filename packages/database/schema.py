@@ -195,7 +195,6 @@ class ClusterV2(Base):
     ranked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=None)
     rank_components: Mapped[Optional[dict]] = mapped_column(JSONB, default=None)
     rank_version: Mapped[Optional[str]] = mapped_column(String, default=None)
-    rank_config: Mapped[Optional[dict]] = mapped_column(JSONB, default=None)
     rank_category: Mapped[Optional[str]] = mapped_column(String, default=None)
     ranking_run_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("ranking_run.id", ondelete="SET NULL", name="fk_cluster_v2_ranking_run_id"),

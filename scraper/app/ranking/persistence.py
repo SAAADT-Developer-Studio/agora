@@ -112,23 +112,13 @@ def prepare_cluster(
     })
 
 
-def rank_and_save_cluster(
-    cluster: ClusterV2, evaluated_at: datetime, config: RankingConfig, *, dry_run: bool = False,
-    ranking_run_id: int | None = None,
-) -> ClusterRankingExplanation:
-    """Update the tracked cluster; the caller owns its transaction and commit."""
-    config = resolve_ranking_config(config)
-    snapshot = prepare_cluster(cluster, evaluated_at, config)
-    explanation = explain_cluster_ranking(snapshot, evaluated_at, config)
-    if dry_run:
-        return explanation
-    cluster.rank_score = explanation.result.score
-    cluster.ranking_run_id = ranking_run_id
-    cluster.ranked_at = explanation.result.evaluated_at
-    cluster.rank_version = explanation.algorithm_version
-    cluster.rank_config = config.model_dump(mode="json")
-    cluster.rank_category = snapshot.category
-    cluster.rank_components = {
+def _summary_components(explanation: ClusterRankingExplanation) -> dict:
+    """Small, stable fields for cluster_v2.rank_components.
+
+    The full ClusterRankingExplanation is returned to the caller and is not
+    stored. Dry-run uses that return value; production rows keep this summary.
+    """
+    return {
         **explanation.result.components.model_dump(mode="json"),
         "base_score": explanation.base_score,
         "freshness_factor": explanation.freshness_factor,
@@ -152,10 +142,33 @@ def rank_and_save_cluster(
         },
         "syndication_algorithm_version": explanation.coverage.syndication_algorithm_version,
         "category_policy": "earliest-report-per-publisher-excluding-family-copies-v1",
-        # Keep the summary keys above compatible with existing readers, and retain
-        # every component's article/publisher decisions for later inspection.
-        "explanation": explanation.model_dump(mode="json"),
     }
+
+
+def rank_and_save_cluster(
+    cluster: ClusterV2, evaluated_at: datetime, config: RankingConfig, *, dry_run: bool = False,
+    ranking_run_id: int | None = None,
+) -> ClusterRankingExplanation:
+    """Update the tracked cluster; the caller owns its transaction and commit.
+
+    Always returns the full explanation. ``dry_run=True`` writes nothing, which
+    is how callers inspect that explanation. A real save stores summary
+    component fields only. Configuration is stored once on ``ranking_run``.
+    """
+    config = resolve_ranking_config(config)
+    snapshot = prepare_cluster(cluster, evaluated_at, config)
+    explanation = explain_cluster_ranking(snapshot, evaluated_at, config)
+    if dry_run:
+        return explanation
+    cluster.rank_score = explanation.result.score
+    cluster.ranking_run_id = ranking_run_id
+    cluster.ranked_at = explanation.result.evaluated_at
+    cluster.rank_version = explanation.algorithm_version
+    cluster.rank_category = snapshot.category
+    # Summary only. The full explanation stays on the returned object so a
+    # dry-run can inspect it; it is not written on every cluster row.
+    # rank_config lives once on ranking_run, referenced by ranking_run_id.
+    cluster.rank_components = _summary_components(explanation)
     return explanation
 
 
@@ -168,11 +181,11 @@ def expire_cluster_ranking(
     cluster.ranked_at = evaluated_at
     cluster.ranking_run_id = ranking_run_id
     cluster.rank_version = "expired-v1"
-    cluster.rank_config = config.model_dump(mode="json")
     cluster.rank_category = None
     cluster.rank_components = {
         "status": "expired",
-        "reason": "snapshot_outside_ranking_window",
+        "reason": "not_in_scored_cluster_run",
+        "config_version": config.version,
         "score": 0.0,
         "cutoff": cutoff.isoformat(),
         "snapshot_created_at": cluster.created_at.isoformat(),

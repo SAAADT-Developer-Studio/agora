@@ -28,10 +28,12 @@ class ClusterConfidenceConfig(ContractModel):
     semantic_weight: float = Field(default=0.7, ge=0.0, le=1.0)
     unknown_similarity_score: float = Field(default=0.5, ge=0.0, lt=1.0)
     unknown_membership_confidence: float = Field(default=0.5, ge=0.0, lt=1.0)
+    # Retained so previously saved configuration still validates. The score no
+    # longer applies this as a hard step at the weak-similarity threshold.
     weak_relation_penalty: float = Field(default=0.5, ge=0.0, le=1.0)
     temporal_half_life_hours: float = Field(default=72.0, gt=0.0)
     temporal_penalty: float = Field(default=0.25, ge=0.0, le=1.0)
-    gate_power: float = Field(default=2.0, ge=1.0)
+    gate_power: float = Field(default=1.0, ge=1.0)
 
     @model_validator(mode="after")
     def ordered_thresholds(self) -> "ClusterConfidenceConfig":
@@ -106,11 +108,13 @@ def _normalize(vector: tuple[float, ...]) -> tuple[float, ...] | None:
 def score_cluster_confidence(
     cluster: RankableCluster, evaluated_at: datetime, config: RankingConfig,
 ) -> ClusterConfidenceResult:
-    """Estimate coherence from peers, membership, relation failures, and time spread.
+    """Estimate coherence from other publishers, membership, and time spread.
 
     Each syndicated family uses its representative's signals once. Each publisher
-    has total weight one, shared across its remaining reports. Missing signals
-    stay visible and cannot silently become perfect confidence.
+    has total weight one, shared across its remaining reports. Similarity uses
+    only other publishers, and a single-publisher cluster scores 0.5. Missing
+    signals stay visible and cannot silently become perfect confidence. Weak and
+    outlier flags are diagnostics; they do not apply a step penalty.
     """
     policy = ClusterConfidenceConfig.model_validate(config.parameters.get("cluster_confidence", {}))
     detection = detect_syndication(cluster, evaluated_at, config)
@@ -135,6 +139,21 @@ def score_cluster_confidence(
     vector_total = tuple(fsum(weights[index] * vectors[index][axis] for index in comparable)
                          for axis in range(dimension or 0))
     vector_weight = fsum(weights[index] for index in comparable)
+    # Same-publisher posts are not peers. One outlet repeating itself cannot
+    # manufacture a coherent multi-source event.
+    publisher_vector_sum: dict[str, tuple[float, ...]] = {}
+    publisher_vector_weight: dict[str, float] = {}
+    if dimension:
+        grouped: dict[str, list[int]] = {}
+        for index in comparable:
+            key = representatives[index].publisher_key.casefold()
+            grouped.setdefault(key, []).append(index)
+        for key, indexes in grouped.items():
+            publisher_vector_weight[key] = fsum(weights[index] for index in indexes)
+            publisher_vector_sum[key] = tuple(
+                fsum(weights[index] * vectors[index][axis] for index in indexes)
+                for axis in range(dimension)
+            )
 
     center = None
     cumulative = 0.0
@@ -152,22 +171,24 @@ def score_cluster_confidence(
         semantic_fallback = True
         similarity_score = policy.unknown_similarity_score
         semantic_outlier = semantic_weak = False
+        publisher = article.publisher_key.casefold()
+        other_publisher_weight = vector_weight - publisher_vector_weight.get(publisher, 0.0)
         if not article.embedding:
             status = "missing"
         elif vector is None:
             status = "zero_vector"
-        elif len(vector) != dimension:
+        elif dimension is None or len(vector) != dimension:
             status = "incompatible_dimension"
-        elif len(comparable) < 2:
+        elif other_publisher_weight <= 0.0:
             status = "no_peers"
         else:
-            # Leave this report out: its own vector must not manufacture a
-            # strong article-to-centroid match, especially for tiny clusters.
-            peer_total = tuple(total - weight * value
-                               for total, value in zip(vector_total, vector, strict=True))
+            # Compare only with other publishers. Leaving this publisher out
+            # stops repeated posts from agreeing with themselves.
+            own_total = publisher_vector_sum.get(publisher, tuple(0.0 for _ in vector_total))
+            peer_total = tuple(total - part for total, part in zip(vector_total, own_total, strict=True))
             peer_length = sqrt(fsum(value * value for value in peer_total))
             semantic_fallback = False
-            if peer_length <= 1e-12 * (vector_weight - weight):
+            if peer_length <= 1e-12 * other_publisher_weight:
                 # Several available peer directions cancel: this is incoherence,
                 # distinct from missing data or a singleton's absent comparison.
                 status, similarity_score = "cancelled_peer_centroid", 0.0
@@ -213,8 +234,14 @@ def score_cluster_confidence(
     deviation = mean([report.temporal_deviation_hours for report in reports]) if reports else None
     temporal = 2.0 ** (-deviation / policy.temporal_half_life_hours) if deviation is not None else 0.0
     signal = policy.semantic_weight * semantic_score + (1.0 - policy.semantic_weight) * membership_score
-    confidence = _unit(signal * (1.0 - outliers) * (1.0 - policy.weak_relation_penalty * weak)
-                       * (1.0 - policy.temporal_penalty * (1.0 - temporal)))
+    # Similarity already enters through the continuous similarity_score ramp.
+    # Binary weak/outlier flags stay on the report for inspection and do not
+    # multiply the score, so crossing 0.75 cannot jump the result.
+    confidence = _unit(signal * (1.0 - policy.temporal_penalty * (1.0 - temporal)))
+    # One publisher, however many posts, has no cross-outlet evidence. That is
+    # the same observation as a single article.
+    if reports and len(publisher_counts) < 2:
+        confidence = 0.5
     return ClusterConfidenceResult(
         cluster_id=cluster.cluster_id, cluster_confidence_score=confidence,
         gate_multiplier=confidence ** policy.gate_power,
