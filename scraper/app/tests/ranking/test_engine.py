@@ -55,9 +55,9 @@ def test_default_composition_has_documented_values_and_applies_each_gate_once():
     assert components.cluster_confidence_score == pytest.approx(0.97)
     expected_base = (0.6425 + 1 - exp(-2 / 5) + 1 - exp(-2 / 3) + 2 / 3) / 4
     assert result.base_score == pytest.approx(expected_base)
-    assert result.result.score == pytest.approx(expected_base * 0.97 ** 2)
+    assert result.result.score == pytest.approx(expected_base * 0.97)
     assert result.freshness_factor == 1
-    assert result.confidence_factor == pytest.approx(0.97 ** 2)
+    assert result.confidence_factor == pytest.approx(0.97)
     assert all(term.weight == 0.25 for term in result.terms)
     assert result.algorithm_version == "cluster-ranking-v1"
     assert result.result.config_version == "ranking-test-v1"
@@ -228,7 +228,12 @@ def test_large_badly_formed_cluster_is_gated_despite_strong_other_components():
                for index in range(12)]
     result = explain(*reports)
     assert result.base_score > 0.5
-    assert result.confidence_factor == result.result.score == 0
+    assert result.confidence.semantic_coherence_score == 0
+    assert result.confidence_factor == pytest.approx(0.27)
+    assert result.result.score == pytest.approx(
+        result.base_score * result.freshness_factor * result.confidence_factor
+    )
+    assert result.result.score < result.base_score
 
 
 def test_category_changes_event_decay_without_changing_base_importance():
@@ -260,7 +265,9 @@ def test_missing_components_keep_their_configured_weights_instead_of_redistribut
     assert result.freshness.anchor_basis == "first_report_fallback"
     assert result.article_strength.publishers[0].used_unknown_content
     assert all(publisher.used_fallback for publisher in result.publisher_authority.publishers)
-    assert 0 < result.result.score < 0.1
+    # Single-article confidence is 0.5 and the gate power is 1, so a thin
+    # snapshot stays small without being forced under the old squared gate.
+    assert 0 < result.result.score < 0.2
 
 
 def test_all_future_input_yields_zero_without_a_neutral_fallback_score():
@@ -306,7 +313,7 @@ def test_finalizer_applies_freshness_and_confidence_once_to_an_ungated_base():
     )
     result = finalize_ranking(cluster_id=7, base_score=0.8, components=components, evaluated_at=NOW,
                               config=RankingConfig(version="test"))
-    assert result.score == pytest.approx(0.016)
+    assert result.score == pytest.approx(0.08)
     assert result.components == components
 
 
@@ -379,6 +386,48 @@ def test_nonfinite_weights_are_rejected(value):
 def test_invalid_component_configuration_is_not_swallowed_as_missing_data():
     with pytest.raises(ValidationError):
         explain(article(), parameters={"freshness": {"default_half_life_hours": 0}})
+
+
+def _near(cosine: float) -> tuple[float, float]:
+    return (cosine, (1.0 - cosine * cosine) ** 0.5)
+
+
+def _story_article(article_id, publisher, published_at, cosine, llm_rank=8):
+    return article(
+        article_id, publisher_key=publisher, published_at=published_at, llm_rank=llm_rank,
+        embedding=_near(cosine), cluster_membership_confidence=0.85,
+        content=" ".join(f"outlet{publisher}report{article_id}word{index}" for index in range(70)),
+    )
+
+
+def test_fresh_multi_source_story_outranks_old_big_story_and_a_single_article():
+    fresh = rank_cluster(RankableCluster(cluster_id=1, articles=(
+        _story_article(1, "rtvslo", NOW - timedelta(hours=2), 1.0),
+        _story_article(2, "24ur", NOW - timedelta(hours=2), 0.93),
+        _story_article(3, "delo", NOW - timedelta(hours=1), 0.88),
+    )), NOW, RankingConfig(version="feed-order"))
+    old = rank_cluster(RankableCluster(cluster_id=2, articles=tuple(
+        _story_article(10 + index, f"archive-{index}", NOW - timedelta(hours=30), 0.9 + index / 200, llm_rank=9)
+        for index in range(8)
+    )), NOW, RankingConfig(version="feed-order"))
+    single = rank_cluster(RankableCluster(cluster_id=3, articles=(
+        _story_article(30, "local", NOW - timedelta(hours=1), 1.0),
+    )), NOW, RankingConfig(version="feed-order"))
+    assert fresh.score > old.score > single.score
+
+
+def test_one_outlet_posting_many_times_does_not_beat_several_outlets():
+    repeated = rank_cluster(RankableCluster(cluster_id=1, articles=tuple(
+        _story_article(index, "rtvslo", NOW - timedelta(minutes=20 * index), min(0.99, 0.85 + index / 100))
+        for index in range(1, 16)
+    )), NOW, RankingConfig(version="outlets"))
+    several = rank_cluster(RankableCluster(cluster_id=2, articles=tuple(
+        _story_article(20 + index, publisher, NOW - timedelta(hours=1), 0.9 + index / 50)
+        for index, publisher in enumerate(("rtvslo", "24ur", "delo", "vecer"))
+    )), NOW, RankingConfig(version="outlets"))
+    assert repeated.components.cluster_confidence_score == 0.5
+    assert several.components.cluster_confidence_score > repeated.components.cluster_confidence_score
+    assert several.score > repeated.score
 
 
 def test_naive_evaluation_time_is_rejected():

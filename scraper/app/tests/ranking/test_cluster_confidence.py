@@ -49,7 +49,7 @@ def test_coherent_reports_expose_all_signals_and_the_confidence_gate():
     assert result.membership_confidence_score == pytest.approx(0.9)
     assert result.membership_data_fraction == result.temporal_coherence_score == 1
     assert result.signal_confidence_score == result.cluster_confidence_score == pytest.approx(0.97)
-    assert result.gate_multiplier == pytest.approx(0.97 ** 2)
+    assert result.gate_multiplier == pytest.approx(0.97)
     assert result.outlier_proportion == result.weakly_related_proportion == 0
     assert result.embedding_dimension == 2
     assert result.compared_report_count == result.effective_report_weight == 3
@@ -69,7 +69,10 @@ def test_two_unrelated_reports_cannot_get_false_confidence_from_their_own_centro
     result = score(article(1, embedding=(1.0, 0.0)), article(2, embedding=(0.0, 1.0)))
     assert [report.peer_centroid_similarity for report in result.reports] == [0, 0]
     assert result.outlier_proportion == result.weakly_related_proportion == 1
-    assert result.cluster_confidence_score == result.gate_multiplier == 0
+    assert result.semantic_coherence_score == 0
+    # Membership still contributes. The outlier flag does not zero the score.
+    assert result.cluster_confidence_score == pytest.approx(0.27)
+    assert result.gate_multiplier == pytest.approx(result.cluster_confidence_score)
 
 
 def test_a_singleton_has_no_semantic_peer_instead_of_perfect_similarity():
@@ -78,7 +81,7 @@ def test_a_singleton_has_no_semantic_peer_instead_of_perfect_similarity():
     assert result.reports[0].peer_centroid_similarity is None
     assert result.semantic_data_fraction == 0
     assert result.cluster_confidence_score == 0.5
-    assert result.gate_multiplier == 0.25
+    assert result.gate_multiplier == 0.5
     assert result.basis == "fallback"
 
 
@@ -89,15 +92,15 @@ def test_outliers_lower_confidence_even_when_membership_values_are_high():
     assert result.reports[3].is_outlier
     assert result.reports[3].peer_centroid_similarity == 0
     assert result.cluster_confidence_score < score(*coherent).cluster_confidence_score
-    assert result.gate_multiplier < 0.3
+    assert result.gate_multiplier == pytest.approx(result.cluster_confidence_score)
 
 
-def test_weakly_related_reports_are_penalized_separately_from_clear_outliers():
+def test_weakly_related_reports_keep_the_continuous_similarity_score():
     result = score(article(1), article(2, embedding=(0.6, 0.8)))
     assert result.outlier_proportion == 0
     assert result.weakly_related_proportion == 1
     assert result.semantic_coherence_score == pytest.approx(0.4)
-    assert result.cluster_confidence_score == pytest.approx(result.signal_confidence_score * 0.5)
+    assert result.cluster_confidence_score == pytest.approx(result.signal_confidence_score)
     assert all(report.is_weakly_related and not report.is_outlier for report in result.reports)
 
 
@@ -106,8 +109,7 @@ def test_balanced_unrelated_subgroups_remain_low_confidence_even_when_large():
                for index in range(1, 41)]
     result = score(*reports)
     assert result.weakly_related_proportion == 1
-    assert result.cluster_confidence_score < 0.4
-    assert result.gate_multiplier < 0.16
+    assert result.cluster_confidence_score < score(article(1), article(2)).cluster_confidence_score
 
 
 def test_many_mutually_unrelated_reports_cannot_become_confident_through_volume():
@@ -115,7 +117,9 @@ def test_many_mutually_unrelated_reports_cannot_become_confident_through_volume(
         reports = [article(index + 1, embedding=tuple(float(axis == index) for axis in range(count)))
                    for index in range(count)]
         result = score(*reports)
-        assert result.cluster_confidence_score == result.gate_multiplier == 0
+        assert result.semantic_coherence_score == 0
+        assert result.cluster_confidence_score == pytest.approx(0.27)
+        assert result.gate_multiplier == pytest.approx(result.cluster_confidence_score)
         assert result.outlier_proportion == 1
 
 
@@ -129,7 +133,8 @@ def test_coherent_report_count_does_not_add_a_confidence_bonus():
 def test_opposing_vectors_are_incoherent_instead_of_missing_data():
     result = score(article(1), article(2, embedding=(-1.0, 0.0)))
     assert [report.peer_centroid_similarity for report in result.reports] == [-1, -1]
-    assert result.cluster_confidence_score == 0
+    assert result.semantic_coherence_score == 0
+    assert result.cluster_confidence_score == pytest.approx(0.27)
     assert result.semantic_data_fraction == 1
 
 
@@ -141,7 +146,8 @@ def test_cancelling_peer_centroid_is_a_measured_failure_not_an_unknown_fallback(
     assert report.similarity_score == 0
     assert report.is_outlier and not report.used_semantic_fallback
     assert result.semantic_data_fraction == 1
-    assert result.cluster_confidence_score == 0
+    assert result.cluster_confidence_score == pytest.approx(result.signal_confidence_score)
+    assert result.cluster_confidence_score > 0
 
 
 def test_membership_confidence_matters_with_identical_embeddings():
@@ -152,7 +158,8 @@ def test_membership_confidence_matters_with_identical_embeddings():
     assert high.cluster_confidence_score > medium.cluster_confidence_score > weak.cluster_confidence_score > outlier.cluster_confidence_score
     assert high.cluster_confidence_score == 1
     assert weak.weakly_related_proportion == 1 and weak.outlier_proportion == 0
-    assert outlier.outlier_proportion == 1 and outlier.cluster_confidence_score == 0
+    assert outlier.outlier_proportion == 1
+    assert outlier.cluster_confidence_score > 0
 
 
 def test_missing_membership_uses_an_explicit_fallback_instead_of_zero_or_one():
@@ -168,7 +175,7 @@ def test_zero_membership_is_not_treated_as_missing():
     result = score(article(1, cluster_membership_confidence=0), article(2, cluster_membership_confidence=0))
     assert result.membership_confidence_score == 0
     assert result.membership_data_fraction == 1
-    assert result.cluster_confidence_score == 0
+    assert result.cluster_confidence_score == pytest.approx(0.7)
 
 
 @pytest.mark.parametrize("embedding, status", [((), "missing"), ((0.0, 0.0), "zero_vector")])
@@ -357,7 +364,7 @@ def test_input_order_is_deterministic_and_snapshots_and_results_are_immutable():
 def test_final_score_is_multiplicatively_gated_even_when_every_other_component_is_maximum(confidence):
     result = finalize_ranking(cluster_id=7, base_score=1, components=components(confidence),
                               evaluated_at=NOW, config=CONFIG)
-    assert result.score == confidence ** 2
+    assert result.score == confidence
     assert result.score <= confidence
     assert result.components.cluster_confidence_score == confidence
     assert result.cluster_id == 7 and result.config_version == CONFIG.version
@@ -365,8 +372,8 @@ def test_final_score_is_multiplicatively_gated_even_when_every_other_component_i
 
 def test_a_large_bad_cluster_cannot_outrank_a_coherent_cluster_by_raising_its_base_score():
     coherent = score(article(1), article(2))
-    bad = score(*(article(index, embedding=(1.0, 0.0) if index <= 20 else (0.0, 1.0))
-                  for index in range(1, 41)))
+    bad = score(*(article(index, embedding=tuple(float(axis == index) for axis in range(8)))
+                  for index in range(1, 9)))
     good_result = finalize_ranking(cluster_id=7, base_score=0.4,
                                    components=components(coherent.cluster_confidence_score), evaluated_at=NOW, config=CONFIG)
     bad_result = finalize_ranking(cluster_id=8, base_score=1.0,
@@ -404,7 +411,7 @@ def test_finalization_keeps_component_explanations_and_normalizes_evaluation_tim
     assert result.components == supplied
     assert result.evaluated_at == NOW
     assert result.model_dump(mode="json")["evaluated_at"] == "2026-09-13T12:00:00Z"
-    assert result.score == 0.2
+    assert result.score == 0.4
 
 
 @pytest.mark.parametrize("invalid", [-0.1, 1.1, float("nan"), float("inf"), "0.5", True])
@@ -437,6 +444,40 @@ def test_nonfinite_configuration_is_rejected(value):
     for parameter in ClusterConfidenceConfig.model_fields:
         with pytest.raises(ValidationError):
             ClusterConfidenceConfig(**{parameter: value})
+
+
+def _rotated(cosine: float) -> tuple[float, float]:
+    return (cosine, (1.0 - cosine * cosine) ** 0.5)
+
+
+def test_confidence_is_continuous_around_the_old_weak_threshold():
+    def at(cosine):
+        return score(
+            article(1, embedding=(1.0, 0.0), cluster_membership_confidence=None),
+            article(2, embedding=_rotated(cosine), cluster_membership_confidence=None),
+        )
+
+    below = at(0.749)
+    above = at(0.751)
+    assert below.weakly_related_proportion == 1
+    assert above.weakly_related_proportion == 0
+    assert above.cluster_confidence_score >= below.cluster_confidence_score
+    assert above.cluster_confidence_score - below.cluster_confidence_score < 0.02
+    assert above.cluster_confidence_score < below.cluster_confidence_score * 1.25
+    wider = [at(cosine).cluster_confidence_score for cosine in (0.70, 0.74, 0.76, 0.80, 0.90)]
+    assert wider == sorted(wider)
+
+
+def test_one_publisher_scores_like_a_single_article():
+    many = score(*(
+        article(index, publisher_key="rtvslo", embedding=_rotated(min(0.99, 0.8 + index / 100)))
+        for index in range(1, 16)
+    ))
+    single = score(article(publisher_key="rtvslo", cluster_membership_confidence=None))
+    assert len(many.reports) == 15
+    assert many.cluster_confidence_score == single.cluster_confidence_score == 0.5
+    assert all(report.embedding_status == "no_peers" for report in many.reports)
+    assert all(report.peer_centroid_similarity is None for report in many.reports)
 
 
 def test_naive_evaluation_time_is_rejected_by_scoring_and_finalization():

@@ -133,7 +133,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=Record cluster rankings for observation
+          Description=Score the latest production clustering run and expire older ranking data
           Requires=docker.service
           After=docker.service network-online.target
 
