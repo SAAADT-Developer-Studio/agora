@@ -18,6 +18,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV}
       DATABASE_URL: ${DATABASE_URL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_FALLBACK_API_KEY: ${OPENROUTER_FALLBACK_API_KEY}
 
   alloy:
     image: grafana/alloy:latest

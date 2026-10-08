@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from langchain_core.language_models import LanguageModelInput
 
 from app.providers.news_provider import ExtractedArticle, ArticleMetadata
+from app.utils.llm_errors import log_llm_exceptions
 from app import config
 
 
@@ -65,6 +66,10 @@ async def analyze_articles(
         )
         inputs.append(prompt)
     results = await model.abatch(inputs=inputs, return_exceptions=True)
+    log_llm_exceptions(
+        "Article analysis failed",
+        [r for r in results if isinstance(r, BaseException)],
+    )
     return [r if isinstance(r, ArticleAnalysis) else None for r in results]
 
 

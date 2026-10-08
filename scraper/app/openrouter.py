@@ -19,6 +19,7 @@ def create_openrouter_chat_model(model_name: str = DEFAULT_OPENROUTER_MODEL):
     )
 
     fallback_key = config.OPENROUTER_FALLBACK_API_KEY
+    logging.info("OpenRouter fallback key present: %s", bool(fallback_key))
     if not fallback_key:
         return primary_model
 
@@ -30,7 +31,6 @@ def create_openrouter_chat_model(model_name: str = DEFAULT_OPENROUTER_MODEL):
         extra_body={"reasoning": {"enabled": False}},
     )
 
-    logging.info("OpenRouter fallback API key configured")
     return primary_model.with_fallbacks(
         [fallback_model],
         # OpenRouter's 402 credit errors use APIStatusError directly; 403 and

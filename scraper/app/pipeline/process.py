@@ -58,8 +58,14 @@ async def process(
             new_article_metadatas, extracted_articles, analysis_model
         )
 
-        # Filter to successful articles
         successful_indices = [i for i, a in enumerate(article_analyses) if a is not None]
+        failed_analyses = len(article_analyses) - len(successful_indices)
+        if failed_analyses:
+            logging.warning(
+                "analysis failed %d/%d",
+                failed_analyses,
+                len(article_analyses),
+            )
 
         s_metadatas = [new_article_metadatas[i] for i in successful_indices]
         s_extracted = [extracted_articles[i] for i in successful_indices]
