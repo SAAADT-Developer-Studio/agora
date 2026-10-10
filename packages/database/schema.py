@@ -328,6 +328,20 @@ class Story(Base):
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
     title: Mapped[str] = mapped_column(String)
     last_article_published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # NULL until the title step runs. "article" is the first-article fallback;
+    # "generated" is an LLM headline. A later summary or bullets step can use the same flag.
+    title_source: Mapped[Optional[str]] = mapped_column(String, default=None)
+    title_generated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    title_lead_article_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(
+            "article.id",
+            ondelete="SET NULL",
+            name="fk_story_title_lead_article_id",
+        ),
+        default=None,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now, init=False
     )
@@ -339,7 +353,13 @@ class Story(Base):
         init=False,
     )
 
-    __table_args__ = (Index("ix_story_last_article_published_at", "last_article_published_at"),)
+    __table_args__ = (
+        Index("ix_story_last_article_published_at", "last_article_published_at"),
+        CheckConstraint(
+            "title_source IS NULL OR title_source IN ('article', 'generated')",
+            name="ck_story_title_source",
+        ),
+    )
 
     def __repr__(self):
         return f"<Story(id={self.id}, title={self.title})>"

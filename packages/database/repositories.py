@@ -232,6 +232,14 @@ class AssignedArticle(NamedTuple):
     method: str
 
 
+class StoryMemberText(NamedTuple):
+    article_id: int
+    title: str
+    deck: str | None
+    summary: str | None
+    published_at: datetime
+
+
 class StoryRepository:
     def __init__(self, session: Session):
         self.session = session
@@ -281,3 +289,19 @@ class StoryRepository:
 
     def add_membership(self, membership: StoryArticle) -> None:
         self.session.add(membership)
+
+    def member_texts(self, story_id: int) -> Sequence[StoryMemberText]:
+        """Every article in the story, earliest published first."""
+        stmt = (
+            select(
+                Article.id,
+                Article.title,
+                Article.deck,
+                Article.summary,
+                Article.published_at,
+            )
+            .join(StoryArticle, StoryArticle.article_id == Article.id)
+            .where(StoryArticle.story_id == story_id)
+            .order_by(Article.published_at.asc(), Article.id.asc())
+        )
+        return [StoryMemberText(*row) for row in self.session.execute(stmt).tuples().all()]

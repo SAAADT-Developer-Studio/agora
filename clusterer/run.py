@@ -6,6 +6,7 @@ from database.unit_of_work import UnitOfWork, database_session
 
 from .assign import LLM, SEED, NeighborIndex, decide
 from .judge import same_happening
+from .titles import ArticleExcerpt, refresh_story_title
 
 WINDOW_DAYS = 3
 
@@ -78,6 +79,7 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
                 published_at=article.published_at,
                 is_seed=True,
             )
+            _refresh_title(uow, story, is_new=True)
             seeded += 1
             continue
 
@@ -102,6 +104,7 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             published_at=article.published_at,
             is_seed=False,
         )
+        _refresh_title(uow, story, is_new=False)
         if assignment.method == LLM:
             llm += 1
         else:
@@ -114,3 +117,18 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
         cosine,
         llm,
     )
+
+
+def _refresh_title(uow: UnitOfWork, story: Story, *, is_new: bool) -> None:
+    uow.session.flush()
+    excerpts = [
+        ArticleExcerpt(
+            article_id=row.article_id,
+            title=row.title,
+            deck=row.deck,
+            summary=row.summary,
+            published_at=row.published_at,
+        )
+        for row in uow.stories.member_texts(story.id)
+    ]
+    refresh_story_title(story, excerpts, is_new=is_new)
