@@ -1,0 +1,22 @@
+{
+  "$schema": "https://t3.codes/schema/t3.json",
+  "scripts": [
+    {
+      "name": "Setup worktree",
+      "command": "([ -f .env ] || cp \"$T3CODE_PROJECT_ROOT/.env\" .env) && uv sync --all-packages --all-groups",
+      "icon": "configure",
+      "runOnWorktreeCreate": true,
+      "async": false
+    },
+    {
+      "name": "Test",
+      "command": "make test",
+      "icon": "test"
+    },
+    {
+      "name": "Run scraper",
+      "command": "make run",
+      "icon": "play"
+    }
+  ]
+}
