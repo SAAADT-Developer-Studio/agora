@@ -40,12 +40,12 @@ resource "hcloud_server" "scraper_server" {
 
 resource "hcloud_ssh_key" "default" {
   name       = "scraper-ssh-key"
-  public_key = file("~/.ssh/id_ed25519.pub")
+  public_key = file("${path.module}/ssh/default.pub")
 }
 
 resource "hcloud_ssh_key" "ci" {
   name       = "ci-scraper-ssh-key"
-  public_key = file("~/.ssh/id_rsa.pub")
+  public_key = file("${path.module}/ssh/ci.pub")
 }
 
 # DigitalOcean PostgreSQL database cluster

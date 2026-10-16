@@ -1,0 +1,175 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+# Never run two plans/applies against the same state at once.
+concurrency:
+  group: terraform-${{ github.event_name == 'push' && 'main' || github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: infra
+
+env:
+  TF_VERSION: "1.14.8"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  # R2 state backend
+  AWS_ACCESS_KEY_ID: ${{ secrets.TF_STATE_R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.TF_STATE_R2_SECRET_ACCESS_KEY }}
+  AWS_ENDPOINT_URL_S3: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
+  # Terraform variables
+  TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+  TF_VAR_digitalocean_token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+  TF_VAR_cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+  TF_VAR_cf_zone_id: ${{ secrets.CF_ZONE_ID }}
+  TF_VAR_cf_email: ${{ secrets.CF_EMAIL }}
+  TF_VAR_cf_api_token: ${{ secrets.CF_API_TOKEN }}
+  TF_VAR_grafana_url: ${{ secrets.GRAFANA_URL }}
+  TF_VAR_grafana_service_account_token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+  TF_VAR_grafana_loki_datasource_uid: ${{ secrets.GRAFANA_LOKI_DATASOURCE_UID }}
+  TF_VAR_grafana_sm_access_token: ${{ secrets.GRAFANA_SM_ACCESS_TOKEN }}
+  TF_VAR_slack_webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Format check
+        run: terraform fmt -check -recursive -diff
+
+      - name: Init
+        run: terraform init -backend=false
+
+      - name: Validate
+        run: terraform validate -no-color
+
+  # On PRs: plan and post the result as a PR comment.
+  # Skipped for fork PRs, which don't get secrets.
+  plan-pr:
+    needs: check
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -no-color -lock=false -detailed-exitcode > plan.txt 2>&1
+          code=$?
+          cat plan.txt
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" -eq 1 ] && exit 1 || exit 0
+
+      - name: Comment plan on PR
+        if: always() && steps.plan.outputs.exitcode != ''
+        uses: actions/github-script@v7
+        env:
+          EXITCODE: ${{ steps.plan.outputs.exitcode }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- terraform-plan -->';
+            let plan = fs.readFileSync('infra/plan.txt', 'utf8');
+            const summary = plan.match(/^(Plan:.*|No changes\..*)$/m)?.[0] ?? 'Plan failed';
+            if (plan.length > 60000) plan = '...(truncated)\n' + plan.slice(-60000);
+            const status = { '0': 'No changes', '1': 'Failed', '2': 'Changes' }[process.env.EXITCODE];
+            const body = `${marker}\n### Terraform plan: ${status}\n**${summary}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>\n\n_${context.sha.slice(0, 7)}_`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
+
+  # On main: plan to see if anything changed, so the approval gate only
+  # appears when there is something to apply.
+  plan-main:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -no-color -detailed-exitcode
+          code=$?
+          [ "$code" -eq 1 ] && exit 1
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  # Waits for approval on the "production" environment, then re-plans and applies.
+  # The plan file isn't passed between jobs: it contains secrets in plaintext and
+  # artifacts in a public repo are downloadable.
+  apply:
+    needs: plan-main
+    if: needs.plan-main.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init
+
+      - name: Apply
+        run: terraform apply -no-color -auto-approve
