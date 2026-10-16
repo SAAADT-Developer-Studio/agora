@@ -36,6 +36,12 @@ resource "hcloud_server" "scraper_server" {
     env = "production"
     app = "scraper"
   }
+
+  lifecycle {
+    # The Hetzner API returns an empty location on refresh, which would otherwise
+    # force a replacement of the server.
+    ignore_changes = [location]
+  }
 }
 
 resource "hcloud_ssh_key" "default" {

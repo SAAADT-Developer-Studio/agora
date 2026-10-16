@@ -41,3 +41,6 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+# Local state copies left behind by infra/migrate-state.sh
+infra/.local-state-backup/

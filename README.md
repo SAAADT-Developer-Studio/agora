@@ -50,7 +50,7 @@ Similar site with article clustering by news event: https://www.times.si/
 
 ## Terraform
 
-State is stored in the R2 bucket `vidik-tfstate`. Export the R2 credentials first:
+State is stored in the R2 bucket `vidik-tfstate` (itself managed in `cloudflare.tf`). Export the R2 credentials first:
 
 ```bash
 export AWS_ACCESS_KEY_ID=...        # R2 API token (Object Read & Write on vidik-tfstate)
