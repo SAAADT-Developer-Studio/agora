@@ -105,7 +105,7 @@ jobs:
             const fs = require('fs');
             const marker = '<!-- terraform-plan -->';
             let plan = fs.readFileSync('infra/plan.txt', 'utf8');
-            const summary = plan.match(/^(Plan:.*|No changes\..*)$/m)?.[0] ?? 'Plan failed';
+            const summary = plan.match(/^(Plan:.*|No changes\..*|Changes to Outputs:)$/m)?.[0] ?? 'Plan failed';
             if (plan.length > 60000) plan = '...(truncated)\n' + plan.slice(-60000);
             const status = { '0': 'No changes', '1': 'Failed', '2': 'Changes' }[process.env.EXITCODE];
             const body = `${marker}\n### Terraform plan: ${status}\n**${summary}**\n\n<details><summary>Show plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>\n\n_${context.sha.slice(0, 7)}_`;
