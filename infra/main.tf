@@ -63,8 +63,6 @@ resource "digitalocean_database_cluster" "postgres" {
   storage_size_mib = "30720" # 30 GiB, must be a 10 GiB increment
   region           = "fra1"
   node_count       = 1
-
-  tags = ["production", "scraper", "postgres"]
 }
 
 # Create a database within the cluster
