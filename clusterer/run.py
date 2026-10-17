@@ -1,11 +1,21 @@
 from datetime import datetime, timedelta, timezone
 import logging
 
-from database.schema import Story, StoryArticle
+from database.schema import Story, StoryArticle, StorySummary
 from database.unit_of_work import UnitOfWork, database_session
 
 from .assign import LLM, SEED, NeighborIndex, decide
 from .judge import same_happening
+from .summary import (
+    MODEL,
+    PROMPT_VERSION,
+    ArticleExcerpt,
+    Brief,
+    bullets_from_json,
+    bullets_to_json,
+    lead_article,
+    refresh_brief,
+)
 
 WINDOW_DAYS = 3
 
@@ -78,6 +88,7 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
                 published_at=article.published_at,
                 is_seed=True,
             )
+            _refresh_summary(uow, story)
             seeded += 1
             continue
 
@@ -102,6 +113,7 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             published_at=article.published_at,
             is_seed=False,
         )
+        _refresh_summary(uow, story)
         if assignment.method == LLM:
             llm += 1
         else:
@@ -114,3 +126,45 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
         cosine,
         llm,
     )
+
+
+def _refresh_summary(uow: UnitOfWork, story: Story) -> None:
+    uow.session.flush()
+    excerpts = [
+        ArticleExcerpt(
+            article_id=row.article_id,
+            title=row.title,
+            deck=row.deck,
+            summary=row.summary,
+            published_at=row.published_at,
+        )
+        for row in uow.stories.member_texts(story.id)
+    ]
+    stored = uow.stories.latest_summary(story.id)
+    previous = (
+        Brief(
+            title=stored.title,
+            bullets=bullets_from_json(stored.bullets),
+            lead_article_id=stored.lead_article_id,
+        )
+        if stored is not None
+        else None
+    )
+    brief = refresh_brief(excerpts, previous)
+    if brief is None:
+        lead = lead_article(excerpts)
+        if previous is None and lead is not None:
+            story.title = lead.title
+        return
+    uow.stories.add_summary(
+        StorySummary(
+            story_id=story.id,
+            title=brief.title,
+            bullets=bullets_to_json(brief.bullets),
+            lead_article_id=brief.lead_article_id,
+            model=MODEL,
+            prompt_version=PROMPT_VERSION,
+        )
+    )
+    story.title = brief.title
+    logger.info("Story %s summary: %s (%d bullets)", story.id, brief.title, len(brief.bullets))

@@ -1198,29 +1198,14 @@ Run PostgreSQL integration checks against a disposable database with
 tests create and remove isolated temporary schemas; they never connect to the
 application's `DATABASE_URL` for test writes.
 
-## Clustering imported articles in dev
+## Exporting articles to dev
 
 Cluster and run creation timestamps are stored as timezone-aware UTC values, so
 newly created snapshots are immediately eligible for ranking. The database loader
 treats article LLM ranks outside 1–10 as unknown importance and logs the article
 ID; the original article row is preserved.
 
-After manually importing articles, run the existing clustering command from the
-repository root:
-
-```bash
-make run-clustering ARGS="--dev --bootstrap --days 5"
-```
-
-`--dev` loads `DEV_DATABASE_URL` from the root `.env` before the database engine
-is initialized. `--bootstrap --days 5` clusters articles published in the last five
-days, using their embeddings and the existing HDBSCAN algorithm. Omit `--days` to
-cluster all existing articles. It needs no previous
-run and makes no external API calls. Titles use member article titles; membership
-confidences are saved. A new run is created without deleting articles or clusters.
-Omitting these flags preserves the normal incremental clustering command.
-
-For future article exports:
+To export articles:
 
 ```bash
 make export-articles DAYS=5 OUTPUT=/tmp/articles-5d.sql

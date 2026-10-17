@@ -26,7 +26,6 @@ make migrate-check
 Scraper-only scripts (still the old clusterer, live in `scraper/`):
 
 ```bash
-make run-clustering
 make sync-images
 ```
 

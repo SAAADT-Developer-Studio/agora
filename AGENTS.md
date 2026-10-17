@@ -23,7 +23,6 @@ make run
 make migrate
 make migrate-rev m="what changed"
 make migrate-check
-make run-clustering
 make sync-images
 ```
 
