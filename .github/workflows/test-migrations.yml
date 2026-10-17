@@ -1,0 +1,47 @@
+name: Test Migrations
+
+# Applies every migration to an empty, throwaway Postgres and checks that
+# schema.py has no changes missing a migration. Never touches prod or Neon.
+
+on:
+  pull_request:
+    paths:
+      - "packages/database/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Makefile"
+      - ".github/workflows/test-migrations.yml"
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17 # matches the DigitalOcean cluster in infra/main.tf
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      DATABASE_URL: postgresql://postgres:test@localhost:5432/test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Apply all migrations from an empty database
+        run: make migrate
+
+      - name: Check schema.py matches migrations
+        run: make migrate-check
