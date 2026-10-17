@@ -54,17 +54,17 @@ resource "grafana_contact_point" "slack_synthetic_alerts" {
     title                   = "Vidik Site Monitoring"
     text                    = <<-EOT
       {{ if gt (len .Alerts.Firing) 0 }}
-      🌐 **SITE DOWN** ({{ len .Alerts.Firing }})
+      🌐 **WEBSITE CHECK FAILURES** ({{ len .Alerts.Firing }})
       {{ range .Alerts.Firing }}
       ---
       **Alert:** {{ .Labels.alertname }}
-      **Description:** {{ .Annotations.description }}
+      **Description:** {{ or .Annotations.description .Annotations.summary }}
       **Time:** {{ .StartsAt.Format "2006-01-02 15:04:05" }}
       {{ end }}
       {{ end }}
 
       {{ if gt (len .Alerts.Resolved) 0 }}
-      ✅ **SITE RECOVERED** ({{ len .Alerts.Resolved }})
+      ✅ **WEBSITE CHECKS RECOVERED** ({{ len .Alerts.Resolved }})
       {{ range .Alerts.Resolved }}
       ---
       **Alert:** {{ .Labels.alertname }}
@@ -89,20 +89,21 @@ resource "grafana_rule_group" "scraper_alerts" {
     name      = "Scraper Processing Stopped"
     condition = "B"
 
-    # Query A: Count log lines with the success message
+    # A successful cycle includes clustering/ranking and can take 46 minutes,
+    # followed by a 10-minute sleep. Allow a full hour between completions.
     data {
       ref_id     = "A"
       query_type = "instant"
 
       relative_time_range {
-        from = 1200 # 20 minutes in seconds
+        from = 3600 # 60 minutes in seconds
         to   = 0
       }
 
       datasource_uid = var.grafana_loki_datasource_uid
 
       model = jsonencode({
-        expr      = "count_over_time({service_name=\"scraper\"} |~ `Successfully processed .* new articles` [20m])"
+        expr      = "sum(count_over_time({service_name=\"scraper\"} |~ `Successfully processed .* new articles` [60m])) or vector(0)"
         queryType = "instant"
         refId     = "A"
         datasource = {
@@ -117,7 +118,7 @@ resource "grafana_rule_group" "scraper_alerts" {
       ref_id = "B"
 
       relative_time_range {
-        from = 1200
+        from = 3600
         to   = 0
       }
 
@@ -159,7 +160,7 @@ resource "grafana_rule_group" "scraper_alerts" {
     for = "5m" # Alert must be active for 5 minutes before firing
 
     annotations = {
-      description = "The scraper has not successfully processed any articles in the last 20 minutes. Last successful log message: 'Successfully processed X new articles in Y seconds!'"
+      description = "No successful scraper cycle (including clustering and ranking) has completed in the last 60 minutes, and this condition has persisted for 5 minutes. Check scraper logs and log delivery. Successful cycles with zero new articles also count."
       summary     = "Scraper processing stopped"
     }
 
@@ -214,7 +215,7 @@ resource "grafana_synthetic_monitoring_check" "vidik_http_check" {
   target    = "https://vidik.si"
   enabled   = true
   frequency = 300000 # Check every 5 minutes
-  timeout   = 5000
+  timeout   = 15000  # Budget for all five sequential requests, not each request.
 
   labels = {
     service = "synthetic-monitoring"
@@ -254,13 +255,14 @@ resource "grafana_synthetic_monitoring_check" "vidik_http_check" {
 }
 
 
-# lint error here for some fucking reason, but it works
+# Three probes run every five minutes. Four failures in 15 minutes requires
+# failures across multiple rounds; one transient round cannot page the channel.
 resource "grafana_synthetic_monitoring_check_alerts" "vidik_alerts" {
   check_id = grafana_synthetic_monitoring_check.vidik_http_check.id
   alerts = [
     {
       name        = "ProbeFailedExecutionsTooHigh"
-      threshold   = 2
+      threshold   = 4
       period      = "15m"
       runbook_url = ""
     }
