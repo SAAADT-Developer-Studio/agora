@@ -50,11 +50,20 @@ Similar site with article clustering by news event: https://www.times.si/
 
 ## Terraform
 
+State is stored in the R2 bucket `vidik-tfstate` (itself managed in `cloudflare.tf`). Export the R2 credentials first:
+
 ```bash
+export AWS_ACCESS_KEY_ID=...        # R2 API token (Object Read & Write on vidik-tfstate)
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_ENDPOINT_URL_S3=https://<cf_account_id>.r2.cloudflarestorage.com
+
 cd infra
 terraform init
-terraform apply -var-file=prod.tvars
+terraform plan -var-file=prod.tfvars
 ```
+
+Normally changes go through CI (`.github/workflows/terraform.yml`): PRs get a plan comment,
+merges to `main` apply after approval on the `production` environment.
 
 ## SSH
 

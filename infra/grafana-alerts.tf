@@ -91,7 +91,8 @@ resource "grafana_rule_group" "scraper_alerts" {
 
     # Query A: Count log lines with the success message
     data {
-      ref_id = "A"
+      ref_id     = "A"
+      query_type = "instant"
 
       relative_time_range {
         from = 1200 # 20 minutes in seconds
