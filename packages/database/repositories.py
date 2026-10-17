@@ -15,6 +15,7 @@ from .schema import (
     ClusterV2,
     Story,
     StoryArticle,
+    StorySummary,
 )
 from datetime import datetime
 from typing import NamedTuple, Sequence
@@ -305,3 +306,14 @@ class StoryRepository:
             .order_by(Article.published_at.asc(), Article.id.asc())
         )
         return [StoryMemberText(*row) for row in self.session.execute(stmt).tuples().all()]
+
+    def latest_summary(self, story_id: int) -> StorySummary | None:
+        return self.session.scalars(
+            select(StorySummary)
+            .where(StorySummary.story_id == story_id)
+            .order_by(StorySummary.id.desc())
+            .limit(1)
+        ).first()
+
+    def add_summary(self, summary: StorySummary) -> None:
+        self.session.add(summary)

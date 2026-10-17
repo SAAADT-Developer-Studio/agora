@@ -326,22 +326,10 @@ class Story(Base):
     __tablename__ = "story"
 
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    # Title of the newest story_summary row. Until one exists, the earliest
+    # article's title.
     title: Mapped[str] = mapped_column(String)
     last_article_published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    # NULL until the title step runs. "article" is the first-article fallback;
-    # "generated" is an LLM headline. A later summary or bullets step can use the same flag.
-    title_source: Mapped[Optional[str]] = mapped_column(String, default=None)
-    title_generated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
-    title_lead_article_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey(
-            "article.id",
-            ondelete="SET NULL",
-            name="fk_story_title_lead_article_id",
-        ),
-        default=None,
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now, init=False
     )
@@ -353,16 +341,44 @@ class Story(Base):
         init=False,
     )
 
-    __table_args__ = (
-        Index("ix_story_last_article_published_at", "last_article_published_at"),
-        CheckConstraint(
-            "title_source IS NULL OR title_source IN ('article', 'generated')",
-            name="ck_story_title_source",
-        ),
-    )
+    __table_args__ = (Index("ix_story_last_article_published_at", "last_article_published_at"),)
 
     def __repr__(self):
         return f"<Story(id={self.id}, title={self.title})>"
+
+
+class StorySummary(Base):
+    """Generated headline and key-point bullets for a story.
+
+    Append-only: the newest row per story is current, older rows are history.
+    """
+
+    __tablename__ = "story_summary"
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    story_id: Mapped[int] = mapped_column(ForeignKey("story.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String)
+    # [{"text": str, "article_ids": [int, ...]}], most important first.
+    bullets: Mapped[List[dict]] = mapped_column(JSONB)
+    # Earliest published article when this row was written. An earlier article
+    # joining the story triggers a new summary.
+    lead_article_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("article.id", ondelete="SET NULL")
+    )
+    model: Mapped[str] = mapped_column(String)
+    prompt_version: Mapped[int] = mapped_column(Integer)
+    # Later: a nullable `framing` JSONB with what left / center / right outlets
+    # (news_provider.bias_rating) emphasize. Only worth generating once at least
+    # two bias groups each cover the story with a few articles; with today's
+    # provider mix one right-leaning article would speak for the whole side.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default_factory=lambda: datetime.now(timezone.utc), init=False
+    )
+
+    __table_args__ = (Index("ix_story_summary_story_id_id", "story_id", "id"),)
+
+    def __repr__(self):
+        return f"<StorySummary(id={self.id}, story_id={self.story_id}, title={self.title})>"
 
 
 class StoryArticle(Base):
