@@ -19,3 +19,13 @@ resource "cloudflare_r2_custom_domain" "images_custom_domain" {
   zone_id      = var.cf_zone_id
   jurisdiction = "eu"
 }
+
+# Holds this config's own Terraform state (see backend.tf).
+resource "cloudflare_r2_bucket" "tfstate" {
+  account_id = var.cf_account_id
+  name       = "vidik-tfstate"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
