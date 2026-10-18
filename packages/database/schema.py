@@ -333,6 +333,11 @@ class Story(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now, init=False
     )
+    # Set when the story was found to duplicate another and its articles moved
+    # there. A merged story has no memberships; its URL should redirect.
+    merged_into_story_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("story.id", ondelete="SET NULL"), default=None
+    )
 
     memberships: Mapped[List["StoryArticle"]] = relationship(
         "StoryArticle",
@@ -389,6 +394,8 @@ class StoryArticle(Base):
     article_id: Mapped[int] = mapped_column(ForeignKey("article.id", ondelete="CASCADE"))
     method: Mapped[str] = mapped_column(String)
     similarity: Mapped[Optional[float]] = mapped_column(Float, default=None)
+    # Cosine to the story centroid at assignment time.
+    story_similarity: Mapped[Optional[float]] = mapped_column(Float, default=None)
     nearest_article_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("article.id", ondelete="SET NULL"), default=None
     )

@@ -4,7 +4,7 @@ Separates concerns and provides clean abstractions for each entity.
 """
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload, load_only
 from .schema import (
     Article,
@@ -315,5 +315,30 @@ class StoryRepository:
             .limit(1)
         ).first()
 
+    def latest_summaries(self, story_ids: list[int]) -> dict[int, StorySummary]:
+        if not story_ids:
+            return {}
+        rows = self.session.scalars(
+            select(StorySummary)
+            .where(StorySummary.story_id.in_(story_ids))
+            .distinct(StorySummary.story_id)
+            .order_by(StorySummary.story_id, StorySummary.id.desc())
+        ).all()
+        return {row.story_id: row for row in rows}
+
     def add_summary(self, summary: StorySummary) -> None:
         self.session.add(summary)
+
+    def merge(self, drop: Story, keep: Story) -> None:
+        """Move every article of ``drop`` into ``keep``."""
+        self.session.flush()
+        self.session.execute(
+            update(StoryArticle)
+            .where(StoryArticle.story_id == drop.id)
+            .values(story_id=keep.id)
+        )
+        drop.merged_into_story_id = keep.id
+        if drop.last_article_published_at > keep.last_article_published_at:
+            keep.last_article_published_at = drop.last_article_published_at
+        self.session.expire(drop, ["memberships"])
+        self.session.expire(keep, ["memberships"])

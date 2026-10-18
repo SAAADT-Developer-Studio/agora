@@ -5,7 +5,7 @@ from database.schema import Story, StoryArticle, StorySummary
 from database.unit_of_work import UnitOfWork, database_session
 
 from .assign import LLM, SEED, NeighborIndex, decide
-from .judge import same_happening
+from .judge import same_happening, same_story
 from .summary import (
     MODEL,
     PROMPT_VERSION,
@@ -34,8 +34,8 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
     unassigned = uow.stories.get_unassigned_since(since)
 
     index = NeighborIndex()
-    story_ids = {row.story_id for row in assigned}
-    stories = uow.stories.get_by_ids(list(story_ids))
+    story_ids = list({row.story_id for row in assigned})
+    stories = uow.stories.get_by_ids(story_ids)
     for row in assigned:
         index.add(
             row.article_id,
@@ -46,11 +46,16 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             published_at=row.published_at,
             is_seed=row.method == SEED,
         )
+    for story_id, stored in uow.stories.latest_summaries(story_ids).items():
+        index.set_brief(
+            story_id, stored.title, [bullet.text for bullet in bullets_from_json(stored.bullets)]
+        )
 
     if not unassigned:
         logger.info("No unassigned articles in the %d-day window", WINDOW_DAYS)
         return
 
+    changed: set[int] = set()
     seeded = 0
     cosine = 0
     llm = 0
@@ -60,6 +65,7 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             index,
             title=article.title,
             summary=article.summary,
+            published_at=article.published_at,
             judge=same_happening,
         )
         if assignment.story_id is None:
@@ -69,41 +75,26 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             )
             uow.stories.create(story)
             uow.session.flush()
-            uow.stories.add_membership(
-                StoryArticle(
-                    story_id=story.id,
-                    article_id=article.id,
-                    method=assignment.method,
-                    similarity=assignment.similarity,
-                    nearest_article_id=assignment.nearest_article_id,
-                )
-            )
             stories[story.id] = story
-            index.add(
-                article.id,
-                story.id,
-                article.embedding,
-                title=article.title,
-                summary=article.summary,
-                published_at=article.published_at,
-                is_seed=True,
-            )
-            _refresh_summary(uow, story)
             seeded += 1
-            continue
-
-        story = stories[assignment.story_id]
+        else:
+            story = stories[assignment.story_id]
+            if article.published_at > story.last_article_published_at:
+                story.last_article_published_at = article.published_at
+            if assignment.method == LLM:
+                llm += 1
+            else:
+                cosine += 1
         uow.stories.add_membership(
             StoryArticle(
                 story_id=story.id,
                 article_id=article.id,
                 method=assignment.method,
                 similarity=assignment.similarity,
+                story_similarity=assignment.story_similarity,
                 nearest_article_id=assignment.nearest_article_id,
             )
         )
-        if article.published_at > story.last_article_published_at:
-            story.last_article_published_at = article.published_at
         index.add(
             article.id,
             story.id,
@@ -111,13 +102,10 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             title=article.title,
             summary=article.summary,
             published_at=article.published_at,
-            is_seed=False,
+            is_seed=assignment.story_id is None,
         )
-        _refresh_summary(uow, story)
-        if assignment.method == LLM:
-            llm += 1
-        else:
-            cosine += 1
+        changed.add(story.id)
+        _refresh_summary(uow, story, index)
 
     logger.info(
         "Assigned %d articles (%d seeded, %d cosine, %d llm)",
@@ -126,9 +114,44 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
         cosine,
         llm,
     )
+    _merge_duplicates(uow, index, stories, changed)
 
 
-def _refresh_summary(uow: UnitOfWork, story: Story) -> None:
+def _merge_duplicates(
+    uow: UnitOfWork, index: NeighborIndex, stories: dict[int, Story], changed: set[int]
+) -> None:
+    """Merge stories that cover the same event, e.g. after two seeds grew side by side.
+
+    Only pairs touched this run are judged, so a rejected pair is not asked
+    again every run unless one of the stories grows.
+    """
+    merged: set[int] = set()
+    for pair in index.merge_candidates(changed):
+        if pair.keep_story_id in merged or pair.drop_story_id in merged:
+            continue
+        try:
+            same = same_story(
+                index.story_context(pair.keep_story_id), index.story_context(pair.drop_story_id)
+            )
+        except Exception:
+            logger.warning("Story merge judge failed", exc_info=True)
+            continue
+        if not same:
+            continue
+        keep = stories[pair.keep_story_id]
+        drop = stories[pair.drop_story_id]
+        uow.stories.merge(drop, keep)
+        index.move(drop.id, keep.id)
+        merged.add(drop.id)
+        logger.info(
+            "Merged story %s into %s (centroid cosine %.3f)", drop.id, keep.id, pair.similarity
+        )
+        _refresh_summary(uow, keep, index, force=True)
+
+
+def _refresh_summary(
+    uow: UnitOfWork, story: Story, index: NeighborIndex, *, force: bool = False
+) -> None:
     uow.session.flush()
     excerpts = [
         ArticleExcerpt(
@@ -150,7 +173,7 @@ def _refresh_summary(uow: UnitOfWork, story: Story) -> None:
         if stored is not None
         else None
     )
-    brief = refresh_brief(excerpts, previous)
+    brief = refresh_brief(excerpts, previous, force=force)
     if brief is None:
         lead = lead_article(excerpts)
         if previous is None and lead is not None:
@@ -167,4 +190,5 @@ def _refresh_summary(uow: UnitOfWork, story: Story) -> None:
         )
     )
     story.title = brief.title
+    index.set_brief(story.id, brief.title, [bullet.text for bullet in brief.bullets])
     logger.info("Story %s summary: %s (%d bullets)", story.id, brief.title, len(brief.bullets))

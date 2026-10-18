@@ -2,29 +2,85 @@ import io
 import json
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 import pytest
 
 import clusterer.judge as judge
-from clusterer.judge import build_prompt, parse_same, same_happening
+from clusterer.assign import PromptArticle, StoryContext
+from clusterer.judge import (
+    build_merge_prompt,
+    build_prompt,
+    parse_relation,
+    same_happening,
+    same_story,
+)
+
+_DAY = datetime(2026, 10, 11, 9, tzinfo=timezone.utc)
+_STORY = StoryContext(
+    headline="Referendumi 11. oktobra",
+    bullets=("Udeležba 54 %", "Zakon zavrnjen"),
+    members=(PromptArticle("A", None, _DAY), PromptArticle("B", "sum")),
+)
 
 
-def test_prompt_omits_blank_summaries() -> None:
-    text = build_prompt("Title", "  ", [("A", None), ("B", "sum")])
+def _reply(relation: str) -> io.BytesIO:
+    payload = {"choices": [{"message": {"content": json.dumps({"relation": relation})}}]}
+    return io.BytesIO(json.dumps(payload).encode())
+
+
+def test_prompt_shows_brief_dated_members_and_omits_blank_summaries() -> None:
+    text = build_prompt(PromptArticle("Title", "  ", _DAY), _STORY)
 
     assert text.startswith("You group Slovenian news into stories.\n")
-    assert "New article:\nTitle: Title\n\nNearest story:\n1. Title: A\n2. Title: B\n   Summary: sum\n" in text
-    assert text.endswith("\nIs the new article the same happening as that story?")
+    assert "opinion columns" in text
+    assert (
+        "Story:\nHeadline: Referendumi 11. oktobra\nKey points:\n- Udeležba 54 %\n"
+        "- Zakon zavrnjen\nArticles:\n1. [2026-10-11] Title: A\n2. Title: B\n"
+        "   Summary: sum\n\nNew article:\n[2026-10-11] Title: Title\n"
+    ) in text
+    assert text.endswith("\nHow does the new article relate to the story?")
 
 
-def test_parse_same() -> None:
-    assert parse_same('{"same": true}') is True
-    assert parse_same('{"same": false}') is False
+def test_merge_prompt_shows_both_stories() -> None:
+    other = StoryContext(headline=None, bullets=(), members=(PromptArticle("C", None),))
+
+    text = build_merge_prompt(_STORY, other)
+
+    assert "Story A:\nHeadline: Referendumi 11. oktobra\n" in text
+    assert "Story B:\nArticles:\n1. Title: C\n" in text
+    assert text.endswith("\nHow does story B relate to story A?")
 
 
-def test_parse_same_rejects_non_bool() -> None:
+def test_parse_relation() -> None:
+    assert parse_relation('{"relation": "same_event"}') == "same_event"
+    assert parse_relation('{"relation": "related_topic"}') == "related_topic"
+
+
+def test_parse_relation_rejects_unknown() -> None:
     with pytest.raises(ValueError):
-        parse_same('{"same": "yes"}')
+        parse_relation('{"relation": "yes"}')
+    with pytest.raises(ValueError):
+        parse_relation('{"same": true}')
+
+
+@pytest.mark.parametrize(
+    ("relation", "joins", "merges"),
+    [
+        ("same_event", True, True),
+        ("development", True, False),
+        ("related_topic", False, False),
+        ("different", False, False),
+    ],
+)
+def test_relations_map_to_join_and_merge(
+    monkeypatch: pytest.MonkeyPatch, relation: str, joins: bool, merges: bool
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "primary")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _reply(relation))
+
+    assert same_happening(PromptArticle("t", "s"), _STORY) is joins
+    assert same_story(_STORY, _STORY) is merges
 
 
 def test_missing_key_seeds_without_calling(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,7 +92,8 @@ def test_missing_key_seeds_without_calling(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
-    assert same_happening("t", "s", [("a", "b")]) is False
+    assert same_happening(PromptArticle("t", "s"), _STORY) is False
+    assert same_story(_STORY, _STORY) is False
 
 
 def test_credit_error_uses_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,12 +107,11 @@ def test_credit_error_uses_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
             raise urllib.error.HTTPError(
                 request.full_url, 402, "Payment Required", hdrs=None, fp=io.BytesIO(b"")
             )
-        payload = {"choices": [{"message": {"content": json.dumps({"same": True})}}]}
-        return io.BytesIO(json.dumps(payload).encode())
+        return _reply("same_event")
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
-    assert same_happening("t", "s", [("a", "b")]) is True
+    assert same_happening(PromptArticle("t", "s"), _STORY) is True
     assert calls == ["Bearer primary", "Bearer fallback"]
 
 
@@ -73,5 +129,5 @@ def test_other_http_error_does_not_use_fallback(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
     with pytest.raises(urllib.error.HTTPError):
-        same_happening("t", None, [])
+        same_happening(PromptArticle("t", None), _STORY)
     assert calls == ["Bearer primary"]

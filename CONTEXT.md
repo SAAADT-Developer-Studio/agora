@@ -19,3 +19,7 @@ _Avoid_: Article-cluster, label
 **Assignment**:
 The decision that an article joins an existing Story or seeds a new one.
 _Avoid_: Classification, cluster label
+
+**Merge**:
+Moving every Membership of a duplicate Story into the Story it duplicates. The duplicate stays, empty, pointing at the Story it was merged into.
+_Avoid_: Dedupe, combine
