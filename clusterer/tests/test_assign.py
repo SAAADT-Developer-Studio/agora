@@ -1,6 +1,18 @@
 from datetime import datetime, timezone
 
-from clusterer.assign import COSINE, JOIN_THRESHOLD, LLM, LLM_FLOOR, SEED, NeighborIndex, decide
+import math
+
+from clusterer.assign import (
+    COSINE,
+    JOIN_THRESHOLD,
+    LLM,
+    LLM_FLOOR,
+    SEED,
+    NeighborIndex,
+    PromptArticle,
+    StoryContext,
+    decide,
+)
 
 
 def test_empty_index_seeds() -> None:
@@ -91,25 +103,100 @@ def _at(hour: int) -> datetime:
     return datetime(2026, 9, 27, hour, tzinfo=timezone.utc)
 
 
+def _unit(degrees: float) -> list[float]:
+    radians = math.radians(degrees)
+    return [math.cos(radians), math.sin(radians)]
+
+
 def test_gray_band_yes_joins_as_llm() -> None:
     index = NeighborIndex()
-    index.add(1, 10, [1.0, 0.0], title="Nearest", summary="Near", is_seed=True)
+    index.add(1, 10, [1.0, 0.0], title="Nearest", summary="Near", published_at=_at(1), is_seed=True)
     seen: dict[str, object] = {}
 
-    def judge(title: str, summary: str | None, members: list[tuple[str, str | None]]) -> bool:
-        seen["title"] = title
-        seen["summary"] = summary
-        seen["members"] = members
+    def judge(article: PromptArticle, story: StoryContext) -> bool:
+        seen["article"] = article
+        seen["story"] = story
         return True
 
-    assignment = decide(_toward(0.74), index, title="New", summary="Body", judge=judge)
+    assignment = decide(
+        _toward(0.74), index, title="New", summary="Body", published_at=_at(2), judge=judge
+    )
 
     assert assignment.story_id == 10
     assert assignment.method == LLM
     assert assignment.nearest_article_id == 1
     assert assignment.similarity is not None
     assert abs(assignment.similarity - 0.74) < 1e-9
-    assert seen == {"title": "New", "summary": "Body", "members": [("Nearest", "Near")]}
+    assert seen == {
+        "article": PromptArticle("New", "Body", _at(2)),
+        "story": StoryContext(
+            headline=None, bullets=(), members=(PromptArticle("Nearest", "Near", _at(1)),)
+        ),
+    }
+
+
+def test_close_to_one_member_but_far_from_story_goes_to_judge() -> None:
+    # The story drifted: the seed is near the new article, the other members
+    # point elsewhere, so the story centroid is far from it.
+    index = NeighborIndex()
+    index.add(1, 10, [1.0, 0.0, 0.0], is_seed=True)
+    for article_id in (2, 3, 4):
+        index.add(article_id, 10, [0.0, 0.0, 1.0])
+    calls: list[object] = []
+
+    def judge(*args: object) -> bool:
+        calls.append(args)
+        return False
+
+    assignment = decide([0.866, 0.5, 0.0], index, judge=judge)
+
+    assert len(calls) == 1
+    assert assignment.method == SEED
+
+
+def test_cosine_join_records_story_similarity() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0))
+    index.add(2, 10, _unit(10))
+
+    assignment = decide(_unit(5), index)
+
+    assert assignment.method == COSINE
+    assert assignment.story_similarity is not None
+    assert abs(assignment.story_similarity - 1.0) < 1e-9
+
+
+def test_judge_sees_story_closest_to_its_centroid() -> None:
+    # Story 10's nearest member is closer, but story 20 matches as a whole.
+    index = NeighborIndex()
+    index.add(1, 10, [0.819, 0.574, 0.0], title="ten-near")
+    index.add(2, 10, [0.0, 0.0, 1.0], title="ten-far")
+    index.add(3, 20, [0.72, -0.694, 0.0], title="twenty-a")
+    index.add(4, 20, [0.72, -0.694, 0.0], title="twenty-b")
+    seen: list[StoryContext] = []
+
+    def judge(_article: PromptArticle, story: StoryContext) -> bool:
+        seen.append(story)
+        return True
+
+    assignment = decide([1.0, 0.0, 0.0], index, judge=judge)
+
+    assert assignment.story_id == 20
+    assert assignment.method == LLM
+    assert {member.title for member in seen[0].members} == {"twenty-a", "twenty-b"}
+
+
+def test_story_context_includes_brief_and_fewer_members() -> None:
+    index = NeighborIndex()
+    for article_id in range(1, 6):
+        index.add(article_id, 10, [1.0, 0.0], title=str(article_id), published_at=_at(article_id))
+    index.set_brief(10, "Headline", ["One", "Two"])
+
+    context = index.story_context(10)
+
+    assert context.headline == "Headline"
+    assert context.bullets == ("One", "Two")
+    assert [member.title for member in context.members] == ["5", "4", "3"]
 
 
 def test_gray_band_no_seeds() -> None:
@@ -154,11 +241,11 @@ def test_prompt_members_prefers_nearest_seed_and_newest() -> None:
     index.add(4, 10, [0.0, 1.0], title="nearest", summary="near", published_at=_at(4))
     index.add(5, 10, [1.0, 0.0], title="newest", summary="new", published_at=_at(5))
 
-    assert index.prompt_members(10, nearest_article_id=4) == [
-        ("nearest", "near"),
-        ("seed", "s"),
-        ("newest", "new"),
-        ("newer", "n"),
+    assert [member.title for member in index.prompt_members(10, nearest_article_id=4)] == [
+        "nearest",
+        "seed",
+        "newest",
+        "newer",
     ]
 
 
@@ -166,4 +253,31 @@ def test_prompt_members_does_not_repeat_the_seed() -> None:
     index = NeighborIndex()
     index.add(1, 10, [1.0, 0.0], title="only", summary=None, published_at=_at(1), is_seed=True)
 
-    assert index.prompt_members(10, 1) == [("only", None)]
+    assert index.prompt_members(10, 1) == [PromptArticle("only", None, _at(1))]
+
+
+def test_merge_candidates_need_a_changed_story_and_close_centroids() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0))
+    index.add(2, 10, _unit(2))
+    index.add(3, 20, _unit(4))
+    index.add(4, 30, _unit(90))
+
+    assert index.merge_candidates(changed=set()) == []
+    pairs = index.merge_candidates(changed={20})
+    assert [(pair.keep_story_id, pair.drop_story_id) for pair in pairs] == [(10, 20)]
+    assert index.merge_candidates(changed={30}) == []
+
+
+def test_move_relabels_members_and_centroid() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0), is_seed=True)
+    index.add(2, 20, _unit(4), is_seed=True)
+    index.set_brief(20, "Old", ["gone"])
+
+    index.move(20, 10)
+
+    assert index.size(10) == 2
+    assert index.size(20) == 0
+    assert [candidate.story_id for candidate in index.candidates(_unit(2))] == [10]
+    assert index.story_context(20).headline is None

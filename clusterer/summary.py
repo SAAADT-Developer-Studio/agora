@@ -286,12 +286,18 @@ def refresh_brief(
     previous: Brief | None,
     *,
     complete: Callable[[str], str] | None = None,
+    force: bool = False,
 ) -> Brief | None:
-    """New summary when the story changed enough and the model delivered, else None."""
+    """New summary when the story changed enough and the model delivered, else None.
+
+    ``force`` skips the change check, e.g. after another story merged in.
+    """
     lead = lead_article(excerpts)
     if lead is None:
         return None
-    if not should_refresh(previous, member_count=len(excerpts), lead_article_id=lead.article_id):
+    if not force and not should_refresh(
+        previous, member_count=len(excerpts), lead_article_id=lead.article_id
+    ):
         return None
     return generate_brief(excerpts, previous, complete=complete)
 
