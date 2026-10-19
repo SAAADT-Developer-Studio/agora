@@ -159,7 +159,10 @@ def ranking_expiry_index_steps(action: str) -> tuple[str, ...]:
 
 
 def _log_cluster_v2_lock_holders() -> None:
-    rows = op.execute(sa.text(_CLUSTER_V2_LOCKS_SQL)).mappings().all()
+    # op.execute() discards the result. The bind is the autocommit connection
+    # inside upgrade(), so this SELECT does not open a transaction around
+    # the DROP INDEX CONCURRENTLY that follows.
+    rows = op.get_bind().execute(sa.text(_CLUSTER_V2_LOCKS_SQL)).mappings().all()
     if not rows:
         log.warning("cluster_v2 lock holders visible to this role: none")
         return
