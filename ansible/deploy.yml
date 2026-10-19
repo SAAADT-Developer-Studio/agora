@@ -79,22 +79,132 @@
       register: pull_result
       changed_when: "'Downloaded' in pull_result.stdout or 'Pull complete' in pull_result.stdout"
 
-    # The clusterer schedule is APScheduler inside the container, not a host
-    # timer or cron. Stopping the compose service stops that loop. Already
-    # stopped or never created containers are a no-op. The always task below
-    # starts the stack again on the new images, including when the migration
-    # command fails, so scraper and clusterer are not left stopped. A dead
-    # SSH connection still skips that task; ansible.cfg keepalives are what
-    # keep the session up while CREATE INDEX CONCURRENTLY is silent.
-    - name: Stop scraper and clusterer before migrations
-      ansible.builtin.command:
-        cmd: docker compose stop --timeout 30 scraper clusterer
-        chdir: "{{ project_dir }}"
-      register: app_stop
-      changed_when: "'Stopping' in app_stop.stdout or 'Stopping' in app_stop.stderr"
+    # Unit files go down before the migration so a running agora-ranking
+    # service can be stopped. The timer is the :00/:30 UTC schedule;
+    # docker compose stop does not touch that oneshot container.
+    - name: Install ranking service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/agora-ranking.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Score the latest production clustering run and expire older ranking data
+          Requires=docker.service
+          After=docker.service network-online.target
+
+          [Service]
+          Type=oneshot
+          WorkingDirectory={{ project_dir }}
+          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 30
+          ExecStopPost=-/usr/bin/docker rm -f agora-ranking
+          TimeoutStartSec=27min
+          TimeoutStopSec=45s
+          StandardOutput=journal
+          StandardError=journal
+
+    - name: Install ranking timer
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/agora-ranking.timer
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Rank clusters every 30 minutes
+
+          [Timer]
+          OnCalendar=*-*-* *:00,30:00 UTC
+          AccuracySec=1s
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
 
     - name: Apply database migrations
       block:
+        # Disable first so Persistent=true cannot start another run while this
+        # one is being stopped. A oneshot stays "activating" until ExecStart
+        # exits. These tasks sit in the block so `always` still brings the
+        # timer and the stack back if a stop fails.
+        - name: Disable the ranking timer before migrations
+          ansible.builtin.systemd_service:
+            name: agora-ranking.timer
+            enabled: false
+            state: stopped
+            daemon_reload: true
+
+        - name: Wait up to 30s for a running ranking unit to exit
+          ansible.builtin.shell: |
+            state=$(systemctl is-active agora-ranking.service || true)
+            printf '%s' "$state"
+            case "$state" in
+              inactive|failed|unknown) exit 0 ;;
+              *) exit 1 ;;
+            esac
+          args:
+            executable: /bin/bash
+          register: ranking_wait
+          changed_when: false
+          # An exhausted `until` is failed even when failed_when is false, and
+          # that would skip the stop below. ignore_errors keeps this block going.
+          failed_when: false
+          ignore_errors: true
+          retries: 6
+          delay: 5
+          until: ranking_wait.rc == 0
+
+        # SIGTERM lets the current page roll back and records the run interrupted.
+        # Committed pages stay committed. TimeoutStopSec on the unit is 45s.
+        # A failed stop must not skip docker rm; the checks below fail the block.
+        - name: Stop the ranking unit if it is still running
+          ansible.builtin.systemd_service:
+            name: agora-ranking.service
+            state: stopped
+          when: ranking_wait.stdout in ["active", "activating", "deactivating"]
+          register: ranking_unit_stop
+          ignore_errors: true
+
+        - name: Remove a leftover ranking container
+          ansible.builtin.command:
+            cmd: docker rm -f agora-ranking
+          register: ranking_container_rm
+          changed_when: ranking_container_rm.rc == 0
+          failed_when: ranking_container_rm.rc not in [0, 1]
+
+        - name: Read the ranking unit state after the stop
+          ansible.builtin.command:
+            cmd: systemctl is-active agora-ranking.service
+          register: ranking_after_stop
+          changed_when: false
+          failed_when: ranking_after_stop.stdout not in ["inactive", "failed", "unknown", "active", "activating", "deactivating"]
+
+        - name: Fail if the ranking unit is still running
+          ansible.builtin.fail:
+            msg: "agora-ranking.service is still {{ ranking_after_stop.stdout }} after stop. Refusing to migrate."
+          when: ranking_after_stop.stdout in ["active", "activating", "deactivating"]
+
+        - name: Fail if the ranking container is still present
+          ansible.builtin.shell: |
+            if docker container inspect agora-ranking >/dev/null 2>&1; then
+              echo "agora-ranking container is still present after stop. Refusing to migrate."
+              exit 1
+            fi
+            echo absent
+          register: ranking_container_gone
+          changed_when: false
+
+        # The clusterer schedule is APScheduler inside the container, not a host
+        # timer or cron. Stopping the compose service stops that loop. Already
+        # stopped or never created containers are a no-op. The always task below
+        # starts the stack again on the new images, including when the migration
+        # command fails, so scraper and clusterer are not left stopped. A dead
+        # SSH connection still skips that task; ansible.cfg keepalives are what
+        # keep the session up while CREATE INDEX CONCURRENTLY is silent.
+        - name: Stop scraper and clusterer before migrations
+          ansible.builtin.command:
+            cmd: docker compose stop --timeout 30 scraper clusterer
+            chdir: "{{ project_dir }}"
+          register: app_stop
+          changed_when: "'Stopping' in app_stop.stdout or 'Stopping' in app_stop.stderr"
+
         - name: Apply database migrations
           ansible.builtin.command:
             # -T: no TTY. The ranking unit already does this. A compose run
@@ -105,6 +215,15 @@
           register: migration_result
           changed_when: "'Running upgrade' in migration_result.stderr"
       always:
+        # Before the stack start. A failure there must not leave the timer disabled.
+        - name: Re-enable the ranking timer
+          ansible.builtin.systemd_service:
+            name: agora-ranking.timer
+            enabled: true
+            state: started
+            daemon_reload: true
+          register: ranking_timer_restart
+          ignore_errors: true
         - name: Start docker-compose stack
           ansible.builtin.command:
             cmd: docker compose up -d --remove-orphans
@@ -146,48 +265,10 @@
         msg: "Alloy container is not running or has crashed."
       when: alloy_info.container.State.Status != "running"
 
-    - name: Install ranking service
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/agora-ranking.service
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Score the latest production clustering run and expire older ranking data
-          Requires=docker.service
-          After=docker.service network-online.target
-
-          [Service]
-          Type=oneshot
-          WorkingDirectory={{ project_dir }}
-          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 30
-          ExecStopPost=-/usr/bin/docker rm -f agora-ranking
-          TimeoutStartSec=27min
-          TimeoutStopSec=45s
-          StandardOutput=journal
-          StandardError=journal
-
-    - name: Install ranking timer
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/agora-ranking.timer
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Rank clusters every 30 minutes
-
-          [Timer]
-          OnCalendar=*-*-* *:00,30:00 UTC
-          AccuracySec=1s
-          Persistent=true
-
-          [Install]
-          WantedBy=timers.target
-
-    - name: Enable ranking every 30 minutes
-      ansible.builtin.systemd_service:
-        name: agora-ranking.timer
-        enabled: true
-        state: started
-        daemon_reload: true
+    - name: Fail if the ranking timer did not come back
+      ansible.builtin.fail:
+        msg: "agora-ranking.timer did not restart after the migration. {{ ranking_timer_restart.msg | default('') }}"
+      when: ranking_timer_restart is failed
 
     - name: Remove dangling images to save space
       community.docker.docker_prune:

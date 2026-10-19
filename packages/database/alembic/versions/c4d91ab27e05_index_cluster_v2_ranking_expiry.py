@@ -26,9 +26,12 @@ in place instead of rebuilding it.
 """
 
 from collections.abc import Mapping, Sequence
+import logging
 
 from alembic import op
 import sqlalchemy as sa
+
+log = logging.getLogger("alembic.runtime.migration")
 
 revision = "c4d91ab27e05"
 down_revision = "3c5e8b1f9a27"
@@ -74,6 +77,19 @@ JOIN pg_namespace AS n ON n.oid = c.relnamespace
 JOIN pg_index AS i ON i.indexrelid = c.oid
 WHERE n.nspname = 'public'
   AND c.relname = :index_name
+"""
+
+# DROP INDEX CONCURRENTLY waits for every transaction that has touched the
+# table. This is who was holding that lock when the wait started.
+_CLUSTER_V2_LOCKS_SQL = """
+SELECT a.pid AS pid,
+       a.xact_start AS xact_start,
+       left(a.query, 200) AS query
+FROM pg_locks AS l
+JOIN pg_class AS c ON c.oid = l.relation
+JOIN pg_stat_activity AS a ON a.pid = l.pid
+WHERE c.relname = 'cluster_v2'
+  AND l.pid <> pg_backend_pid()
 """
 
 
@@ -133,6 +149,33 @@ def ranking_expiry_index_action(
     return "rebuild"
 
 
+def ranking_expiry_index_steps(action: str) -> tuple[str, ...]:
+    """DDL steps for one action. ``ready`` must not drop a valid index."""
+    if action == "ready":
+        return ("analyze",)
+    if action == "rebuild":
+        return ("drop", "create", "analyze")
+    raise ValueError(f"unknown ranking expiry index action {action!r}")
+
+
+def _log_cluster_v2_lock_holders() -> None:
+    # op.execute() discards its result. This probe must not fail the migration:
+    # the DROP still has to run, and lock_timeout is what stops a blocked drop.
+    try:
+        rows = op.get_bind().execute(sa.text(_CLUSTER_V2_LOCKS_SQL)).mappings().all()
+    except Exception as exc:
+        log.warning("could not list cluster_v2 lock holders: %s", exc)
+        return
+    if not rows:
+        log.warning("cluster_v2 lock holders visible to this role: none")
+        return
+    for row in rows:
+        log.warning(
+            "cluster_v2 lock holder pid=%s xact_start=%s query=%s",
+            row["pid"], row["xact_start"], row["query"],
+        )
+
+
 def upgrade() -> None:
     connection = op.get_bind()
     # Read-only probes stay in the migration transaction. CREATE INDEX
@@ -142,24 +185,25 @@ def upgrade() -> None:
         _index_indisvalid(connection),
     )
     with op.get_context().autocommit_block():
-        if action == "ready":
-            # The index already matches this revision. Rebuilding it would
-            # take the same long lock the interrupted deploy was waiting on.
-            op.execute(sa.text("ANALYZE cluster_v2"))
-            return
-        # Invalid or missing. No other backend is building it, so the drop
-        # does not wait on CREATE INDEX CONCURRENTLY.
-        op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX}"))
-        op.create_index(
-            _INDEX,
-            "cluster_v2",
-            ["id"],
-            unique=False,
-            postgresql_where=sa.text(_NEEDS_RANKING_EXPIRY),
-            postgresql_concurrently=True,
-        )
-        # Planner stats for the new partial index, before the next ranking run.
-        op.execute(sa.text("ANALYZE cluster_v2"))
+        for step in ranking_expiry_index_steps(action):
+            if step == "analyze":
+                op.execute(sa.text("ANALYZE cluster_v2"))
+            elif step == "drop":
+                # Invalid or missing. Log who can block the drop, then drop.
+                # A valid index never reaches this step.
+                _log_cluster_v2_lock_holders()
+                op.execute(sa.text(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX}"))
+            elif step == "create":
+                op.create_index(
+                    _INDEX,
+                    "cluster_v2",
+                    ["id"],
+                    unique=False,
+                    postgresql_where=sa.text(_NEEDS_RANKING_EXPIRY),
+                    postgresql_concurrently=True,
+                )
+            else:
+                raise ValueError(f"unknown ranking expiry index step {step!r}")
 
 
 def downgrade() -> None:
