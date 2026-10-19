@@ -32,8 +32,9 @@ def lock_timeout_setting() -> str | None:
 
     ALEMBIC_LOCK_TIMEOUT overrides the 30s default. 0, off, false, or none
     skips the setting. A blocked ALTER then fails instead of waiting out the
-    deploy. statement_timeout is intentionally unset: the ranking index build
-    is one statement and must be allowed to finish.
+    deploy. statement_timeout is intentionally unset: the ranking expiry index
+    is built with CREATE INDEX CONCURRENTLY, which is one statement and must
+    be allowed to finish. lock_timeout still bounds the lock wait.
     """
     raw = os.getenv("ALEMBIC_LOCK_TIMEOUT", _DEFAULT_LOCK_TIMEOUT).strip()
     if raw.lower() in {"0", "off", "false", "none"}:

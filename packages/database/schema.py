@@ -183,6 +183,17 @@ class RankingRun(Base):
     )
 
 
+# Clusters the ranking expiry sweep still has to visit. A stored 0 with
+# status "expired" is the sentinel and is left out; NULL score or status is
+# not that sentinel (IS DISTINCT FROM). The sweep's WHERE clause must use
+# this exact parenthesized text: a bind parameter in its place makes a
+# generic plan ignore the partial index and walk cluster_v2_pkey.
+CLUSTER_V2_NEEDS_RANKING_EXPIRY = (
+    "(rank_score IS DISTINCT FROM 0 "
+    "OR (rank_components ->> 'status') IS DISTINCT FROM 'expired')"
+)
+
+
 class ClusterV2(Base):
     __tablename__ = "cluster_v2"
 
@@ -236,6 +247,13 @@ class ClusterV2(Base):
         Index("ix_cluster_v2_run_id", "run_id"),
         Index("ix_cluster_v2_created_at_id", "created_at", "id"),
         Index("ix_cluster_v2_ranking_run_id", "ranking_run_id"),
+        # id order, only rows the sweep can still return. Expired history
+        # stays in the table and out of this index.
+        Index(
+            "ix_cluster_v2_needs_ranking_expiry",
+            "id",
+            postgresql_where=text(CLUSTER_V2_NEEDS_RANKING_EXPIRY),
+        ),
         CheckConstraint("rank_score BETWEEN 0 AND 1", name="ck_cluster_v2_rank_score"),
     )
 
