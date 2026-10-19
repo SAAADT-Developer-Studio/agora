@@ -81,8 +81,11 @@
 
     # The clusterer schedule is APScheduler inside the container, not a host
     # timer or cron. Stopping the compose service stops that loop. Already
-    # stopped or never created containers are a no-op. docker compose up -d
-    # below starts them again on the new images.
+    # stopped or never created containers are a no-op. The always task below
+    # starts the stack again on the new images, including when the migration
+    # command fails, so scraper and clusterer are not left stopped. A dead
+    # SSH connection still skips that task; ansible.cfg keepalives are what
+    # keep the session up while CREATE INDEX CONCURRENTLY is silent.
     - name: Stop scraper and clusterer before migrations
       ansible.builtin.command:
         cmd: docker compose stop --timeout 30 scraper clusterer
@@ -91,18 +94,23 @@
       changed_when: "'Stopping' in app_stop.stdout or 'Stopping' in app_stop.stderr"
 
     - name: Apply database migrations
-      ansible.builtin.command:
-        cmd: docker compose run --rm --no-deps scraper alembic -c /app/packages/database/alembic.ini upgrade head
-        chdir: "{{ project_dir }}"
-      register: migration_result
-      changed_when: "'Running upgrade' in migration_result.stderr"
-
-    - name: Start docker-compose stack
-      ansible.builtin.command:
-        cmd: docker compose up -d --remove-orphans
-        chdir: "{{ project_dir }}"
-      register: compose_result
-      changed_when: "'Started' in compose_result.stderr or 'Creating' in compose_result.stderr"
+      block:
+        - name: Apply database migrations
+          ansible.builtin.command:
+            # -T: no TTY. The ranking unit already does this. A compose run
+            # attached to a TTY from this non-interactive SSH session is not
+            # how the migration should wait out the index build.
+            cmd: docker compose run --rm --no-deps -T scraper alembic -c /app/packages/database/alembic.ini upgrade head
+            chdir: "{{ project_dir }}"
+          register: migration_result
+          changed_when: "'Running upgrade' in migration_result.stderr"
+      always:
+        - name: Start docker-compose stack
+          ansible.builtin.command:
+            cmd: docker compose up -d --remove-orphans
+            chdir: "{{ project_dir }}"
+          register: compose_result
+          changed_when: "'Started' in compose_result.stderr or 'Creating' in compose_result.stderr"
 
     - name: Wait for containers to be healthy
       ansible.builtin.pause:
