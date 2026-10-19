@@ -103,6 +103,22 @@ def test_valid_index_is_reused_and_a_dead_build_is_rebuilt():
     assert migration.ranking_expiry_index_action([], [], True) == "ready"
     assert migration.ranking_expiry_index_action([], [], False) == "rebuild"
     assert migration.ranking_expiry_index_action([], [], None) == "rebuild"
+    # upgrade() follows these steps, so a valid index never reaches DROP.
+    assert migration.ranking_expiry_index_steps("ready") == ("analyze",)
+    assert "drop" not in migration.ranking_expiry_index_steps("ready")
+    assert migration.ranking_expiry_index_steps("rebuild") == ("drop", "create", "analyze")
+    with pytest.raises(ValueError):
+        migration.ranking_expiry_index_steps("other")
+
+
+def test_drop_logs_cluster_v2_lock_holders():
+    migration = _expiry_index_migration()
+    sql = migration._CLUSTER_V2_LOCKS_SQL
+    assert "a.pid AS pid" in sql
+    assert "a.xact_start AS xact_start" in sql
+    assert "left(a.query, 200) AS query" in sql
+    assert "c.relname = 'cluster_v2'" in sql
+    assert "l.pid <> pg_backend_pid()" in sql
 
 
 def test_index_build_probe_names_this_index_and_ignores_idle_sessions():
