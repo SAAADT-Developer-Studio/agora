@@ -143,19 +143,24 @@
             executable: /bin/bash
           register: ranking_wait
           changed_when: false
-          # rc 1 means it is still running; keep retrying, then stop it below.
-          failed_when: ranking_wait.rc not in [0, 1]
+          # An exhausted `until` is failed even when failed_when is false, and
+          # that would skip the stop below. ignore_errors keeps this block going.
+          failed_when: false
+          ignore_errors: true
           retries: 6
           delay: 5
           until: ranking_wait.rc == 0
 
         # SIGTERM lets the current page roll back and records the run interrupted.
         # Committed pages stay committed. TimeoutStopSec on the unit is 45s.
+        # A failed stop must not skip docker rm; the checks below fail the block.
         - name: Stop the ranking unit if it is still running
           ansible.builtin.systemd_service:
             name: agora-ranking.service
             state: stopped
           when: ranking_wait.stdout in ["active", "activating", "deactivating"]
+          register: ranking_unit_stop
+          ignore_errors: true
 
         - name: Remove a leftover ranking container
           ansible.builtin.command:
@@ -163,6 +168,28 @@
           register: ranking_container_rm
           changed_when: ranking_container_rm.rc == 0
           failed_when: ranking_container_rm.rc not in [0, 1]
+
+        - name: Read the ranking unit state after the stop
+          ansible.builtin.command:
+            cmd: systemctl is-active agora-ranking.service
+          register: ranking_after_stop
+          changed_when: false
+          failed_when: ranking_after_stop.stdout not in ["inactive", "failed", "unknown", "active", "activating", "deactivating"]
+
+        - name: Fail if the ranking unit is still running
+          ansible.builtin.fail:
+            msg: "agora-ranking.service is still {{ ranking_after_stop.stdout }} after stop. Refusing to migrate."
+          when: ranking_after_stop.stdout in ["active", "activating", "deactivating"]
+
+        - name: Fail if the ranking container is still present
+          ansible.builtin.shell: |
+            if docker container inspect agora-ranking >/dev/null 2>&1; then
+              echo "agora-ranking container is still present after stop. Refusing to migrate."
+              exit 1
+            fi
+            echo absent
+          register: ranking_container_gone
+          changed_when: false
 
         # The clusterer schedule is APScheduler inside the container, not a host
         # timer or cron. Stopping the compose service stops that loop. Already

@@ -159,10 +159,13 @@ def ranking_expiry_index_steps(action: str) -> tuple[str, ...]:
 
 
 def _log_cluster_v2_lock_holders() -> None:
-    # op.execute() discards the result. The bind is the autocommit connection
-    # inside upgrade(), so this SELECT does not open a transaction around
-    # the DROP INDEX CONCURRENTLY that follows.
-    rows = op.get_bind().execute(sa.text(_CLUSTER_V2_LOCKS_SQL)).mappings().all()
+    # op.execute() discards its result. This probe must not fail the migration:
+    # the DROP still has to run, and lock_timeout is what stops a blocked drop.
+    try:
+        rows = op.get_bind().execute(sa.text(_CLUSTER_V2_LOCKS_SQL)).mappings().all()
+    except Exception as exc:
+        log.warning("could not list cluster_v2 lock holders: %s", exc)
+        return
     if not rows:
         log.warning("cluster_v2 lock holders visible to this role: none")
         return

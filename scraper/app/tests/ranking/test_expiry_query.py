@@ -121,6 +121,16 @@ def test_drop_logs_cluster_v2_lock_holders():
     assert "l.pid <> pg_backend_pid()" in sql
 
 
+def test_lock_holder_log_cannot_fail_the_migration(monkeypatch):
+    migration = _expiry_index_migration()
+
+    def explode():
+        raise RuntimeError("probe failed")
+
+    monkeypatch.setattr(migration.op, "get_bind", explode)
+    migration._log_cluster_v2_lock_holders()
+
+
 def test_index_build_probe_names_this_index_and_ignores_idle_sessions():
     migration = _expiry_index_migration()
     assert "pg_stat_progress_create_index" in migration._PROGRESS_SQL
