@@ -51,7 +51,7 @@ def test_expiry_limit_must_be_positive():
         expired_ranking_statement(before=BEFORE, keep_run_id=1, limit=0)
 
 
-def test_partial_index_predicate_matches_the_sweep():
+def _expiry_index_migration():
     import importlib.util
     path = Path(schema.__file__).parent / (
         "alembic/versions/c4d91ab27e05_index_cluster_v2_ranking_expiry.py"
@@ -60,5 +60,57 @@ def test_partial_index_predicate_matches_the_sweep():
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
+    return migration
+
+
+def test_partial_index_predicate_matches_the_sweep():
+    migration = _expiry_index_migration()
     assert migration._NEEDS_RANKING_EXPIRY == schema.CLUSTER_V2_NEEDS_RANKING_EXPIRY
     assert schema.CLUSTER_V2_NEEDS_RANKING_EXPIRY in _sql(keep_run_id=42)
+
+
+def test_in_progress_index_build_is_not_dropped():
+    migration = _expiry_index_migration()
+    progress = [{
+        "pid": 42,
+        "command": "CREATE INDEX CONCURRENTLY",
+        "phase": "building index",
+    }]
+    with pytest.raises(
+        migration.IndexBuildInProgress,
+        match="will not DROP INDEX CONCURRENTLY",
+    ) as exc:
+        migration.ranking_expiry_index_action(progress, [], False)
+    message = str(exc.value)
+    assert "pid 42" in message
+    assert "building index" in message
+    assert "valid index is kept" in message
+
+
+def test_active_create_index_session_is_not_dropped():
+    migration = _expiry_index_migration()
+    activity = [{
+        "pid": 77,
+        "state": "active",
+        "query": "CREATE INDEX CONCURRENTLY ix_cluster_v2_needs_ranking_expiry ON cluster_v2 (id)",
+    }]
+    with pytest.raises(migration.IndexBuildInProgress, match="pid 77"):
+        migration.ranking_expiry_index_action([], activity, None)
+
+
+def test_valid_index_is_reused_and_a_dead_build_is_rebuilt():
+    migration = _expiry_index_migration()
+    assert migration.ranking_expiry_index_action([], [], True) == "ready"
+    assert migration.ranking_expiry_index_action([], [], False) == "rebuild"
+    assert migration.ranking_expiry_index_action([], [], None) == "rebuild"
+
+
+def test_index_build_probe_names_this_index_and_ignores_idle_sessions():
+    migration = _expiry_index_migration()
+    assert "pg_stat_progress_create_index" in migration._PROGRESS_SQL
+    assert "idx.relname = :index_name" in migration._PROGRESS_SQL
+    assert "state <> 'idle'" in migration._ACTIVITY_SQL
+    assert "CREATE INDEX" in migration._ACTIVITY_SQL
+    assert "DROP INDEX" in migration._ACTIVITY_SQL
+    assert "n.nspname = 'public'" in migration._VALID_SQL
+    assert migration._INDEX == "ix_cluster_v2_needs_ranking_expiry"

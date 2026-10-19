@@ -15,6 +15,7 @@ on:
       - scraper/Dockerfile
       - clusterer/Dockerfile
       - ansible/deploy.yml
+      - ansible.cfg
       - .github/workflows/deploy.yml
       - "!scraper/**/*.md"
 
@@ -97,6 +98,8 @@ jobs:
             --private-key ~/.ssh/id_rsa
         working-directory: ${{ github.workspace }}
         env:
+          # ssh_args in this file keep ControlMaster and add ServerAlive*.
+          ANSIBLE_CONFIG: ${{ github.workspace }}/ansible.cfg
           HETZNER_VM_HOST: ${{ env.HETZNER_VM_HOST }}
           HETZNER_SSH_USER: ${{ env.HETZNER_SSH_USER }}
           DOCKER_IMAGE_TAG: ${{ github.sha }}
