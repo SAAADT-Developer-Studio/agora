@@ -1,6 +1,7 @@
 name: Deploy to Hetzner VM
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -27,6 +28,8 @@ env:
 
 jobs:
   build:
+    # A dispatch can target any ref. Only main may build or deploy.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -61,6 +64,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   deploy:
+    if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
