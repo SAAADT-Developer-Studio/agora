@@ -13,12 +13,12 @@ import uuid
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 import pytest
-from sqlalchemy import create_engine, event, select, text
+from sqlalchemy import and_, create_engine, event, or_, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from database import schema
-from database.repositories import ClusterV2Repository
+from database.repositories import ClusterV2Repository, expired_ranking_statement
 from database.schema import Base, ClusterRun, ClusterV2, RankingRun
 from app.ranking.contracts import RankingConfig
 from app.ranking.persistence import prepare_cluster
@@ -431,3 +431,183 @@ def test_ranking_run_migration_preserves_scores_and_links_latest_run(db_engine, 
         session.delete(run)
         session.commit()
         assert session.get(ClusterV2, 1).ranking_run_id is None
+
+
+def _legacy_expired_ids(session, *, before, keep_run_id, after_id=0, limit=100):
+    """Selection copied from before the expiry rewrite.
+
+    The old filter was an OR of two AND branches, then AND-ed with the
+    "not already expired" predicate and the id cursor. PostgreSQL's AND/OR
+    precedence makes that the same rows as run_id exclusion AND (old OR scored)
+    AND not-expired. This frozen copy is what the new statement has to match.
+    """
+    live_ranking = or_(
+        ClusterV2.rank_score.is_distinct_from(0),
+        ClusterV2.rank_components["status"].astext.is_distinct_from("expired"),
+    )
+    if keep_run_id is None:
+        stale = ClusterV2.created_at < before
+    else:
+        other_run = ClusterV2.run_id != keep_run_id
+        stale = or_(
+            and_(other_run, ClusterV2.created_at < before),
+            and_(other_run, ClusterV2.rank_score.is_not(None)),
+        )
+    return list(session.scalars(
+        select(ClusterV2.id)
+        .where(stale, live_ranking, ClusterV2.id > after_id)
+        .order_by(ClusterV2.id)
+        .limit(limit)
+    ))
+
+
+def _page_ids(session, *, before, keep_run_id, limit):
+    repo = ClusterV2Repository(session)
+    after_id = 0
+    collected = []
+    while True:
+        new_page = [
+            cluster.id for cluster in repo.get_expired_ranking_batch(
+                before=before, keep_run_id=keep_run_id, after_id=after_id, limit=limit,
+            )
+        ]
+        old_page = _legacy_expired_ids(
+            session, before=before, keep_run_id=keep_run_id, after_id=after_id, limit=limit,
+        )
+        assert new_page == old_page
+        if not new_page:
+            return collected
+        collected.extend(new_page)
+        after_id = new_page[-1]
+
+
+def test_expiry_pages_match_legacy_selection(db_engine):
+    cutoff = datetime(2026, 9, 18, tzinfo=timezone.utc)
+    cases = [
+        # id, run_id, created_at, score, components
+        (1, 1, cutoff - timedelta(days=1), None, None),
+        (2, 1, cutoff - timedelta(days=1), 0.4, {"status": "scored"}),
+        (3, 1, cutoff - timedelta(days=1), 0.0, {"status": "expired"}),
+        (4, 1, cutoff - timedelta(days=1), 0.0, None),
+        (5, 1, cutoff - timedelta(days=1), 0.0, {"status": "other"}),
+        (6, 1, cutoff, None, None),
+        (7, 1, cutoff, 0.2, {"status": "scored"}),
+        (8, 1, cutoff + timedelta(days=1), None, None),
+        (9, 1, cutoff + timedelta(days=1), 0.3, {"status": "scored"}),
+        (10, 2, cutoff - timedelta(days=10), 0.9, {"status": "scored"}),
+        (11, 2, cutoff + timedelta(days=1), 0.9, {"status": "scored"}),
+        (12, 2, cutoff - timedelta(days=1), None, None),
+        (13, 1, cutoff - timedelta(days=1), 0.0, {"status": "expired", "reason": "kept"}),
+        (14, 3, cutoff + timedelta(days=1), 0.0, {"score": 0.0}),
+        (15, 1, cutoff - timedelta(seconds=1), None, None),
+    ]
+    with Session(db_engine) as session:
+        _add_run(session, 1, cutoff - timedelta(days=40), production=True)
+        _add_run(session, 2, cutoff, production=True)
+        _add_run(session, 3, cutoff + timedelta(days=1), production=False)
+        session.flush()
+        for cluster_id, run_id, created_at, score, components in cases:
+            cluster = ClusterV2(title=f"cluster-{cluster_id}", slug=f"cluster-{cluster_id}", run_id=run_id)
+            cluster.id = cluster_id
+            cluster.created_at = created_at
+            cluster.rank_score = score
+            cluster.rank_components = components
+            session.add(cluster)
+        session.commit()
+        # Kept run is 2. Exact cutoff with no score stays. Score 0 is still live
+        # until status is the expired sentinel. Recent scored rows outside the
+        # kept run are cleared; the same rows are kept when nothing is held.
+        assert _page_ids(session, before=cutoff, keep_run_id=2, limit=4) == [
+            1, 2, 4, 5, 7, 9, 14, 15,
+        ]
+        assert _page_ids(session, before=cutoff, keep_run_id=None, limit=3) == [
+            1, 2, 4, 5, 10, 12, 15,
+        ]
+        assert _page_ids(session, before=cutoff, keep_run_id=2, limit=100) == [
+            1, 2, 4, 5, 7, 9, 14, 15,
+        ]
+
+
+def test_expiry_generic_plan_uses_partial_index(db_engine):
+    cutoff = datetime(2026, 9, 18, tzinfo=timezone.utc)
+    with db_engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO cluster_run (id, algo_version, params, is_production, created_at) "
+            "VALUES (1, 'test', '{}', true, :old), (99, 'test', '{}', true, :new)"
+        ), {"old": cutoff - timedelta(days=60), "new": cutoff + timedelta(days=20)})
+        connection.execute(text(
+            "INSERT INTO cluster_v2 (id, title, run_id, rank_score, rank_components, created_at) "
+            "SELECT g, 'expired', 1, 0, '{\"status\":\"expired\"}'::jsonb, :created "
+            "FROM generate_series(1, 100000) AS g"
+        ), {"created": cutoff - timedelta(days=40)})
+        connection.execute(text(
+            "INSERT INTO cluster_v2 (id, title, run_id, rank_score, rank_components, created_at) "
+            "SELECT 100000 + g, 'backlog', 1, NULL, NULL, :created "
+            "FROM generate_series(1, 250) AS g"
+        ), {"created": cutoff - timedelta(days=5)})
+        connection.execute(text(
+            "INSERT INTO cluster_v2 (id, title, run_id, rank_score, rank_components, created_at) "
+            "SELECT 200000 + g, 'keep', 99, 0.5, '{\"status\":\"scored\"}'::jsonb, :created "
+            "FROM generate_series(1, 20) AS g"
+        ), {"created": cutoff + timedelta(days=1)})
+        connection.execute(text("ANALYZE cluster_v2"))
+    with Session(db_engine) as session:
+        selected = _page_ids(session, before=cutoff, keep_run_id=99, limit=80)
+        assert selected == list(range(100001, 100251))
+        session.execute(text(
+            "PREPARE expiry_probe (int, int, timestamptz, int) AS "
+            "SELECT cluster_v2.id FROM cluster_v2 "
+            "WHERE (rank_score IS DISTINCT FROM 0 "
+            "OR (rank_components ->> 'status') IS DISTINCT FROM 'expired') "
+            "AND cluster_v2.id > $1 AND cluster_v2.run_id != $2 "
+            "AND (cluster_v2.created_at < $3 OR cluster_v2.rank_score IS NOT NULL) "
+            "ORDER BY cluster_v2.id LIMIT $4"
+        ))
+        session.execute(text("SET plan_cache_mode = force_generic_plan"))
+        plan = "\n".join(session.scalars(text(
+            "EXPLAIN EXECUTE expiry_probe(0, 99, :cutoff, 100)"
+        ), {"cutoff": cutoff}))
+        assert "Index Scan using ix_cluster_v2_needs_ranking_expiry" in plan
+        assert "cluster_v2_pkey" not in plan
+        # The statement the job runs is the same predicate the probe prepared.
+        compiled = str(expired_ranking_statement(
+            before=cutoff, keep_run_id=99, after_id=0, limit=100,
+        ).compile(dialect=session.bind.dialect))
+        assert "rank_score IS DISTINCT FROM 0" in compiled
+        assert "IS DISTINCT FROM %(" not in compiled
+
+
+def test_expiry_commit_per_batch_keeps_earlier_pages(db_engine, monkeypatch):
+    from database import unit_of_work
+    monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
+    now = datetime.now(timezone.utc)
+    first = _on_run(stored_cluster(cluster_id=1, created_at=now - timedelta(days=40)), 1)
+    second = _on_run(stored_cluster(cluster_id=2, created_at=now - timedelta(days=40)), 1)
+    with Session(db_engine) as session:
+        _add_run(session, 1, now - timedelta(days=50), production=True)
+        _add_run(session, 2, now, production=True)
+        session.flush()
+        session.add_all([first, second])
+        session.commit()
+    original = ClusterV2Repository.get_expired_ranking_batch
+    calls = {"n": 0}
+
+    def fail_second(self, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise TimeoutError("canceling statement due to statement timeout")
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(ClusterV2Repository, "get_expired_ranking_batch", fail_second)
+    with pytest.raises(TimeoutError):
+        main(["--batch-size", "1"])
+    with Session(db_engine) as session:
+        expired = session.get(ClusterV2, 1)
+        untouched = session.get(ClusterV2, 2)
+        assert expired.rank_score == 0
+        assert expired.rank_components["status"] == "expired"
+        assert untouched.rank_score is None
+        run = session.scalars(select(RankingRun)).one()
+        assert run.status == "failed"
+        assert run.expired_count == 1
+        assert run.scored_count == 0

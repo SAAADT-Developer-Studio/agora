@@ -65,6 +65,8 @@ def _run_phase(phase, args, config, *, run_id, evaluated_at, since, target_run_i
     from database.schema import RankingRun
     from app.ranking.job import expire_cluster, score_cluster
 
+    # One transaction per page. A statement timeout rolls this page back and
+    # leaves earlier pages committed, so the next run does not redo them.
     after_id = 0
     while True:
         batch_scored = batch_expired = batch_skipped = 0

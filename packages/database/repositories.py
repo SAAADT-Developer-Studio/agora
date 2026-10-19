@@ -4,9 +4,10 @@ Separates concerns and provides clean abstractions for each entity.
 """
 
 from abc import ABC, abstractmethod  # in case we want to define the repository interface later
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import exists, func, or_, select, text, update
 from sqlalchemy.orm import Session, selectinload, load_only
 from .schema import (
+    CLUSTER_V2_NEEDS_RANKING_EXPIRY,
     Article,
     NewsProvider,
     Cluster,
@@ -120,6 +121,51 @@ class ClusterRepository:
         return self.session.scalars(stmt).all()
 
 
+def expired_ranking_statement(
+    *, before: datetime, keep_run_id: int | None, after_id: int = 0, limit: int = 100,
+):
+    """Select one page of clusters whose ranking data should be zeroed.
+
+    The kept production run is never touched. Every other run is cleared when
+    its snapshot is older than ``before`` or it already carries a score.
+    ``created_at == before`` is not old enough. Rows that already store the
+    expired sentinel (score 0 and status "expired") are skipped.
+
+    ``CLUSTER_V2_NEEDS_RANKING_EXPIRY`` is inlined, parenthesized SQL rather
+    than bound parameters. It has to match ``ix_cluster_v2_needs_ranking_expiry``
+    exactly: ``IS DISTINCT FROM $1`` does not prove the partial index, and a
+    generic plan then walks ``cluster_v2_pkey`` from ``id > after_id`` until
+    it has skipped every already-expired row.
+
+    The age-or-score condition stays one residual filter on that index. An
+    ``ORDER BY id LIMIT`` there stops after one page of non-expired rows.
+    Splitting the OR into a UNION makes the scored branch walk older
+    non-expired ids it does not return.
+    """
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    # Parentheses are part of the constant. AND binds tighter than OR, so an
+    # ungrouped predicate would apply the rest of the filter to only one branch.
+    statement = (
+        select(ClusterV2)
+        .where(text(CLUSTER_V2_NEEDS_RANKING_EXPIRY))
+        .where(ClusterV2.id > after_id)
+    )
+    if keep_run_id is None:
+        statement = statement.where(ClusterV2.created_at < before)
+    else:
+        statement = statement.where(
+            ClusterV2.run_id != keep_run_id,
+            or_(ClusterV2.created_at < before, ClusterV2.rank_score.is_not(None)),
+        )
+    return (
+        statement
+        .order_by(ClusterV2.id)
+        .limit(limit)
+        .options(load_only(ClusterV2.id, ClusterV2.created_at, ClusterV2.run_id))
+    )
+
+
 class ClusterV2Repository:
     """Repository for ClusterV2 entity operations."""
 
@@ -160,32 +206,15 @@ class ClusterV2Repository:
     def get_expired_ranking_batch(
         self, *, before: datetime, keep_run_id: int | None, after_id: int = 0, limit: int = 100,
     ) -> Sequence[ClusterV2]:
-        """Clean ranking data outside the scored run, without loading articles.
+        """One page of clusters whose ranking data should be zeroed.
 
-        The scored run is left untouched. Other runs are cleared when they are
-        older than ``before`` or already carry a score. This does not depend on
-        scoring having finished.
+        The caller commits each page. Keyset paging by id keeps a failed page
+        from retrying rows the previous page already expired.
         """
-        if limit < 1:
-            raise ValueError("limit must be positive")
-        live_ranking = or_(
-            ClusterV2.rank_score.is_distinct_from(0),
-            ClusterV2.rank_components["status"].astext.is_distinct_from("expired"),
-        )
-        if keep_run_id is None:
-            stale = ClusterV2.created_at < before
-        else:
-            other_run = ClusterV2.run_id != keep_run_id
-            stale = or_(
-                and_(other_run, ClusterV2.created_at < before),
-                and_(other_run, ClusterV2.rank_score.is_not(None)),
-            )
         return self.session.scalars(
-            select(ClusterV2)
-            .where(stale, live_ranking, ClusterV2.id > after_id)
-            .order_by(ClusterV2.id)
-            .limit(limit)
-            .options(load_only(ClusterV2.id, ClusterV2.created_at, ClusterV2.run_id))
+            expired_ranking_statement(
+                before=before, keep_run_id=keep_run_id, after_id=after_id, limit=limit,
+            )
         ).all()
 
 
