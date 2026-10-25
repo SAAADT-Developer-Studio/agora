@@ -3,8 +3,13 @@
 from collections import Counter
 from datetime import datetime
 import logging
+from math import isfinite
 
-from database.schema import ClusterV2
+from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import object_session
+
+from database.schema import STORY_RANK_UNRETAINED, ClusterV2, Story, StoryRank
 
 from app.ranking.article_contribution import ArticleContributionConfig
 from app.ranking.cluster_confidence import ClusterConfidenceConfig
@@ -20,6 +25,14 @@ from app.ranking.syndication import SyndicationConfig, detect_syndication
 
 
 DEFAULT_CONFIG_VERSION = "initial-ranking-v1"
+# ranking_run.source. Cluster labels rows written against HDBSCAN snapshots.
+RANKING_SOURCE_CLUSTER = "cluster"
+RANKING_SOURCE_STORY = "story"
+# Older observations keep score, ranked_at, rank_version, and rank_category.
+# The component summary stays only on the latest row for that story.
+SCORE_ONLY_COMPONENTS = {"retained": "score"}
+# Cosine of normalized vectors can sit a few ulps outside [0, 1].
+_SIMILARITY_EPSILON = 1e-6
 CONFIG_SECTIONS = {
     "article_contribution": ArticleContributionConfig,
     "syndication": SyndicationConfig,
@@ -72,6 +85,42 @@ def derive_cluster_category(
     return min(votes, key=lambda category: (-votes[category], category)) if votes else None
 
 
+def membership_confidence_from_story_similarity(
+    value: float | None, *, article_id: int,
+) -> float | None:
+    """Map centroid cosine onto the engine's membership slot, or leave it unknown.
+
+    ``story_article.story_similarity`` is the cosine to the story centroid at
+    assignment time, not an HDBSCAN probability. The engine accepts only a
+    membership confidence in [0, 1] and treats None as unknown (its configured
+    fallback, 0.5). An in-range cosine is that slot's closest input: cosine
+    joins are at least 0.70, above the engine's weak-membership threshold of
+    0.5. Missing, non-finite, and out-of-range values stay unknown so a
+    negative cosine is not turned into a fake probability and does not skip
+    the story. The nearest-article ``similarity`` column is a different
+    measurement and is not used here.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+        logging.warning(
+            "Article %s has story_similarity=%s; using unknown membership confidence",
+            article_id, value,
+        )
+        return None
+    if -_SIMILARITY_EPSILON <= value < 0:
+        return 0.0
+    if 1 < value <= 1 + _SIMILARITY_EPSILON:
+        return 1.0
+    if 0 <= value <= 1:
+        return float(value)
+    logging.warning(
+        "Article %s has story_similarity=%s outside [0, 1]; using unknown membership confidence",
+        article_id, value,
+    )
+    return None
+
+
 def prepare_cluster(
     cluster: ClusterV2, evaluated_at: datetime, config: RankingConfig,
 ) -> RankableCluster:
@@ -104,6 +153,57 @@ def prepare_cluster(
         cluster_id=cluster.id, articles=tuple(articles),
         # Historical cluster rows are recurring snapshots, not durable events.
         # The first member publication provides an available event anchor.
+        created_at=min((article.published_at for article in articles), default=None),
+    )
+    snapshot = with_publisher_authority(snapshot, ManualAuthorityProvider(ranks))
+    return snapshot.model_copy(update={
+        "category": derive_cluster_category(snapshot, evaluated_at, config),
+    })
+
+
+def prepare_story(
+    story: Story, evaluated_at: datetime, config: RankingConfig,
+) -> RankableCluster:
+    """Adapt one story to the unchanged ranking engine.
+
+    The engine still names its input a cluster. ``cluster_id`` carries the
+    story id and is not written back onto the story. ``story.created_at`` is
+    not an event time; the earliest member publication is the anchor, the
+    same rule the cluster loader uses for snapshot rows. Membership strength
+    comes from ``story_similarity`` when it falls in [0, 1], otherwise unknown.
+    """
+    if story.merged_into_story_id is not None:
+        raise ValueError(f"Story {story.id} is merged into {story.merged_into_story_id}")
+    articles = []
+    ranks = {}
+    for membership in story.memberships:
+        article = membership.article
+        llm_rank = article.llm_rank
+        if llm_rank is not None and not 1 <= llm_rank <= 10:
+            logging.warning(
+                "Article %s has invalid llm_rank=%s; using unknown importance",
+                article.id, llm_rank,
+            )
+            llm_rank = None
+        provider = article.news_provider
+        ranks[article.news_provider_key] = provider.rank if provider else None
+        articles.append(RankableArticle(
+            article_id=article.id,
+            publisher_key=article.news_provider_key,
+            title=article.title,
+            published_at=article.published_at,
+            first_seen_at=article.first_seen_at,
+            summary=article.summary,
+            content=article.content,
+            categories=tuple(article.categories or ()),
+            llm_rank=llm_rank,
+            embedding=tuple(article.embedding or ()),
+            cluster_membership_confidence=membership_confidence_from_story_similarity(
+                membership.story_similarity, article_id=article.id,
+            ),
+        ))
+    snapshot = RankableCluster(
+        cluster_id=story.id, articles=tuple(articles),
         created_at=min((article.published_at for article in articles), default=None),
     )
     snapshot = with_publisher_authority(snapshot, ManualAuthorityProvider(ranks))
@@ -169,6 +269,82 @@ def rank_and_save_cluster(
     # dry-run can inspect it; it is not written on every cluster row.
     # rank_config lives once on ranking_run, referenced by ranking_run_id.
     cluster.rank_components = _summary_components(explanation)
+    return explanation
+
+
+def slim_previous_story_rank(story_id: int, ranking_run_id: int):
+    """Reduce only the previous full observation for this story.
+
+    ``ix_story_rank_unretained`` holds rows that are not the score marker.
+    The predicate is a SQL literal, matching that index, and ``LIMIT 1``
+    stops at the newest earlier run. Older full rows are left for retention.
+    """
+    previous = (
+        select(StoryRank.ranking_run_id)
+        .where(
+            StoryRank.story_id == story_id,
+            StoryRank.ranking_run_id != ranking_run_id,
+            text(STORY_RANK_UNRETAINED),
+        )
+        .order_by(StoryRank.ranking_run_id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    return (
+        update(StoryRank)
+        .where(StoryRank.story_id == story_id, StoryRank.ranking_run_id == previous)
+        .values(rank_components=SCORE_ONLY_COMPONENTS)
+    )
+
+
+def _affected_rows(result) -> int:
+    count = getattr(result, "rowcount", None)
+    if count is None or count < 0:
+        return 0
+    return count
+
+
+def rank_and_save_story(
+    story: Story, evaluated_at: datetime, config: RankingConfig, *, dry_run: bool = False,
+    ranking_run_id: int | None = None,
+) -> ClusterRankingExplanation | None:
+    """Insert one story_rank row. The story and its articles are not modified.
+
+    ``dry_run=True`` returns the explanation and writes nothing. A real save
+    requires ``ranking_run_id``. The new row keeps the component summary.
+    Only the previous full row for this story is reduced to
+    ``SCORE_ONLY_COMPONENTS``, in the same session, so a rollback drops the
+    insert and the slim together. A story already scored in this run inserts
+    nothing (``ON CONFLICT DO NOTHING``) and returns ``None``. Configuration
+    stays on ``ranking_run``. This does not read or write cluster tables, and
+    it does not delete rows.
+    """
+    config = resolve_ranking_config(config)
+    snapshot = prepare_story(story, evaluated_at, config)
+    explanation = explain_cluster_ranking(snapshot, evaluated_at, config)
+    if dry_run:
+        return explanation
+    if ranking_run_id is None:
+        raise ValueError("ranking_run_id is required to record a story score")
+    session = object_session(story)
+    if session is None:
+        raise RuntimeError(f"Story {story.id} is not attached to a session")
+    session.execute(slim_previous_story_rank(story.id, ranking_run_id))
+    inserted = session.execute(
+        pg_insert(StoryRank)
+        .values(
+            ranking_run_id=ranking_run_id,
+            story_id=story.id,
+            score=explanation.result.score,
+            ranked_at=explanation.result.evaluated_at,
+            rank_version=explanation.algorithm_version,
+            rank_components=_summary_components(explanation),
+            rank_category=snapshot.category,
+        )
+        .on_conflict_do_nothing(index_elements=["ranking_run_id", "story_id"])
+    )
+    if _affected_rows(inserted) == 0:
+        return None
     return explanation
 
 

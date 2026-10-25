@@ -45,3 +45,9 @@ jobs:
 
       - name: Check schema.py matches migrations
         run: make migrate-check
+
+      - name: Downgrade the latest revision and re-apply it
+        run: |
+          uv run --package database alembic -c packages/database/alembic.ini downgrade -1
+          make migrate
+          make migrate-check
