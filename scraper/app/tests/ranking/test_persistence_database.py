@@ -19,10 +19,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from database import schema
 from database.repositories import ClusterV2Repository, expired_ranking_statement
-from database.schema import Base, ClusterRun, ClusterV2, RankingRun
+from database.schema import Base, ClusterRun, ClusterV2, RankingRun, Story, StoryRank
 from app.ranking.contracts import RankingConfig
 from app.ranking.persistence import prepare_cluster
-from app.tests.ranking.test_persistence import NOW, stored_cluster
+from app.tests.ranking.test_persistence import NOW, stored_cluster, stored_story
 from scripts.rank_clusters import RANKING_LOCK_KEY, handle_termination, main
 
 pytestmark = pytest.mark.integration
@@ -121,134 +121,189 @@ def test_only_latest_production_run_is_selected(db_engine):
         assert not repo.get_ranking_batch(run_id=3, after_id=4, limit=1)
 
 
-def test_command_dry_run_then_saves_all_pages_and_reruns(db_engine, monkeypatch):
+def _seed_stories(session, stories):
+    for story in stories:
+        session.add(story)
+        session.flush()
+
+
+def test_command_dry_run_then_saves_story_pages_and_reruns(db_engine, monkeypatch):
     from database import unit_of_work
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
     now = datetime.now(timezone.utc)
-    old = _on_run(stored_cluster(cluster_id=1, created_at=now - timedelta(days=31)), 1)
-    current_old = _on_run(stored_cluster(cluster_id=2, created_at=now - timedelta(days=29)), 2)
-    current_new = _on_run(stored_cluster(cluster_id=3, created_at=now - timedelta(hours=1)), 2)
-    empty = stored_cluster(cluster_id=4, created_at=now - timedelta(hours=1))
-    empty.memberships.clear()
-    empty.run_id = 2
+    untouched = stored_cluster(cluster_id=100, created_at=now)
+    untouched.rank_score = 0.4
+    untouched.rank_components = {"status": "scored"}
+    fresh_published_at = now - timedelta(hours=1)
+    fresh = stored_story(story_id=2, published_at=fresh_published_at)
+    also_fresh = stored_story(story_id=3, published_at=now - timedelta(hours=2), article_id=30)
+    blank = stored_story(story_id=4, published_at=now - timedelta(hours=1), article_id=40, title="")
+    stale = stored_story(story_id=1, published_at=now - timedelta(days=15))
+    merged = stored_story(
+        story_id=5, published_at=now - timedelta(hours=1), article_id=50, merged_into_story_id=2,
+    )
     with Session(db_engine) as session:
-        _add_run(session, 1, now - timedelta(days=40), production=True)
-        _add_run(session, 2, now, production=True)
+        _add_run(session, 1, now, production=True)
         session.flush()
-        session.add_all([old, current_old, current_new, empty])
+        session.add(untouched)
+        _seed_stories(session, [fresh, also_fresh, blank, stale, merged])
         session.commit()
+    queries = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
     main(["--dry-run", "--batch-size", "1"])
     with Session(db_engine) as session:
-        assert all(c.rank_score is None for c in session.scalars(select(ClusterV2)))
+        assert session.get(ClusterV2, 100).rank_score == 0.4
         assert not session.scalars(select(RankingRun)).all()
-    main(["--batch-size", "1"])
+        assert not session.scalars(select(StoryRank)).all()
+        assert session.get(Story, 2).title == "Station"
+    event.listen(db_engine, "before_cursor_execute", record)
+    try:
+        main(["--batch-size", "1"])
+    finally:
+        event.remove(db_engine, "before_cursor_execute", record)
+    observed_sql = "\n".join(queries).lower()
+    assert "cluster_v2" not in observed_sql
+    assert "article_cluster" not in observed_sql
+    assert "cluster_run" not in observed_sql
     with Session(db_engine) as session:
-        clusters = {c.id: c for c in session.scalars(select(ClusterV2))}
-        assert clusters[1].rank_score == 0
-        assert clusters[1].rank_components["status"] == "expired"
-        assert "explanation" not in clusters[1].rank_components
-        expired_at = clusters[1].ranked_at
-        assert clusters[4].rank_score is None
-        assert 0 <= clusters[2].rank_score <= 1
-        assert 0 <= clusters[3].rank_score <= 1
-        assert clusters[2].ranked_at == clusters[3].ranked_at
-        old_evaluation = clusters[2].ranked_at
-        assert "explanation" not in clusters[2].rank_components
-        assert "coverage_score" in clusters[2].rank_components
-        assert clusters[2].rank_category == "sport"
-        assert clusters[2].rank_components["base_score"] >= 0
+        assert session.get(ClusterV2, 100).rank_score == 0.4
+        assert session.get(ClusterV2, 100).ranking_run_id is None
+        assert session.get(ClusterV2, 100).rank_components == {"status": "scored"}
+        ranks = {row.story_id: row for row in session.scalars(select(StoryRank))}
+        assert set(ranks) == {2, 3}
+        assert ranks[2].ranked_at == ranks[3].ranked_at
+        first_ranked_at = ranks[2].ranked_at
+        assert 0 <= ranks[2].score <= 1
+        assert "explanation" not in ranks[2].rank_components
+        assert "coverage_score" in ranks[2].rank_components
+        assert ranks[2].rank_category == "sport"
+        assert session.get(Story, 1).merged_into_story_id is None
+        assert session.get(Story, 5).merged_into_story_id == 2
         run = session.scalars(select(RankingRun)).one()
         first_run_id = run.id
+        assert run.source == "story"
         assert run.status == "succeeded"
-        assert run.started_at == run.evaluated_at == clusters[2].ranked_at
+        assert run.started_at == run.evaluated_at == ranks[2].ranked_at
         assert run.finished_at >= run.started_at
-        assert (run.scored_count, run.expired_count, run.skipped_count) == (2, 1, 1)
-        assert run.window_days == 30
-        assert run.algorithm_version == clusters[2].rank_version
+        assert (run.scored_count, run.expired_count, run.skipped_count) == (2, 0, 1)
+        assert run.window_days == 14
+        assert run.failed_story_id is None
+        assert run.algorithm_version == ranks[2].rank_version
         assert run.config["parameters"]["ranking"]["coverage_weight"] == 1
-        assert all(clusters[id].ranking_run_id == run.id for id in (1, 2, 3))
-        assert clusters[4].ranking_run_id is None
     main(["--batch-size", "2"])
     with Session(db_engine) as session:
-        cluster = session.get(ClusterV2, 2)
-        assert cluster.ranked_at > old_evaluation
-        assert "explanation" not in cluster.rank_components
-        assert cluster.rank_score is not None
-        assert session.get(ClusterV2, 1).ranked_at == expired_at
-        assert session.get(ClusterV2, 1).ranking_run_id == first_run_id
         runs = session.scalars(select(RankingRun).order_by(RankingRun.id)).all()
         assert len(runs) == 2
+        assert runs[1].source == "story"
         assert runs[1].status == "succeeded"
         assert (runs[1].scored_count, runs[1].expired_count, runs[1].skipped_count) == (2, 0, 1)
-        assert cluster.ranking_run_id == runs[1].id != first_run_id
+        history = session.scalars(select(StoryRank).where(StoryRank.story_id == 2)).all()
+        assert len(history) == 2
+        assert {row.ranking_run_id for row in history} == {first_run_id, runs[1].id}
+        previous = next(row for row in history if row.ranking_run_id == first_run_id)
+        assert previous.ranked_at == first_ranked_at
+        assert session.get(ClusterV2, 100).rank_score == 0.4
+        assert session.get(Story, 2).last_article_published_at == fresh_published_at
 
 
 @pytest.mark.parametrize("batch_size", [1, 2])
-def test_broken_cluster_is_skipped_and_the_rest_score(db_engine, monkeypatch, batch_size):
+def test_broken_story_is_skipped_and_the_rest_score(db_engine, monkeypatch, batch_size):
     from database import unit_of_work
     from app.ranking import persistence
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
     now = datetime.now(timezone.utc)
-    seed(db_engine, [stored_cluster(cluster_id=id, created_at=now - timedelta(hours=1)) for id in (1, 2)])
-    rank = persistence.rank_and_save_cluster
+    with Session(db_engine) as session:
+        _seed_stories(session, [
+            stored_story(story_id=story_id, published_at=now - timedelta(hours=1))
+            for story_id in (1, 2)
+        ])
+        session.commit()
+    rank = persistence.rank_and_save_story
 
-    def fail_second(cluster, *args, **kwargs):
-        if cluster.id == 2:
+    def fail_second(story, *args, **kwargs):
+        if story.id == 2:
             raise ValueError("bad input")
-        return rank(cluster, *args, **kwargs)
+        return rank(story, *args, **kwargs)
 
-    monkeypatch.setattr(persistence, "rank_and_save_cluster", fail_second)
+    monkeypatch.setattr(persistence, "rank_and_save_story", fail_second)
     main(["--batch-size", str(batch_size)])
     with Session(db_engine) as session:
-        clusters = {cluster.id: cluster for cluster in session.scalars(select(ClusterV2))}
-        assert clusters[1].rank_score is not None
-        assert clusters[2].rank_score is None
+        ranks = {row.story_id: row for row in session.scalars(select(StoryRank))}
+        assert set(ranks) == {1}
+        assert session.get(Story, 2).title == "Station"
         run = session.scalars(select(RankingRun)).one()
         assert run.status == "succeeded"
+        assert run.source == "story"
         assert (run.scored_count, run.expired_count, run.skipped_count) == (1, 0, 1)
+        assert run.failed_story_id is None
         assert run.failed_cluster_id is None
         assert run.error is None
 
 
 @pytest.mark.parametrize("batch_size,committed", [(2, 0), (1, 1)])
-def test_failure_rolls_back_current_batch(db_engine, monkeypatch, batch_size, committed):
+def test_failure_rolls_back_current_story_batch(db_engine, monkeypatch, batch_size, committed):
     from database import unit_of_work
     from app.ranking import persistence
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
     now = datetime.now(timezone.utc)
-    seed(db_engine, [stored_cluster(cluster_id=id, created_at=now - timedelta(hours=1)) for id in (1, 2)])
-    rank = persistence.rank_and_save_cluster
-    def fail_second(cluster, *args, **kwargs):
-        if cluster.id == 2:
+    with Session(db_engine) as session:
+        _seed_stories(session, [
+            stored_story(story_id=story_id, published_at=now - timedelta(hours=1))
+            for story_id in (1, 2)
+        ])
+        session.commit()
+    rank = persistence.rank_and_save_story
+
+    def fail_second(story, *args, **kwargs):
+        if story.id == 2:
             raise KeyboardInterrupt("bad input")
-        return rank(cluster, *args, **kwargs)
-    monkeypatch.setattr(persistence, "rank_and_save_cluster", fail_second)
+        return rank(story, *args, **kwargs)
+
+    monkeypatch.setattr(persistence, "rank_and_save_story", fail_second)
     with pytest.raises(KeyboardInterrupt, match="bad input"):
         main(["--batch-size", str(batch_size)])
     with Session(db_engine) as session:
-        assert sum(c.rank_score is not None for c in session.scalars(select(ClusterV2))) == committed
+        saved = session.scalars(select(StoryRank.story_id)).all()
+        assert saved == ([1] if committed else [])
         run = session.scalars(select(RankingRun)).one()
         assert run.status == "interrupted"
         assert run.finished_at >= run.started_at
         assert run.scored_count == committed
         assert run.expired_count == run.skipped_count == 0
-        assert run.failed_cluster_id == 2
+        assert run.failed_story_id == 2
+        assert run.failed_cluster_id is None
         assert run.error == "KeyboardInterrupt: bad input"
 
 
 def test_concurrent_invocation_does_not_write_and_released_lock_allows_rerun(db_engine, monkeypatch):
     from database import unit_of_work
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
-    seed(db_engine, [stored_cluster(created_at=datetime.now(timezone.utc) - timedelta(hours=1))])
+    now = datetime.now(timezone.utc)
+    cluster = stored_cluster(cluster_id=100, created_at=now)
+    cluster.rank_score = 0.4
+    with Session(db_engine) as session:
+        _add_run(session, 1, now, production=True)
+        session.flush()
+        session.add(cluster)
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.commit()
     with db_engine.begin() as connection:
         connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": RANKING_LOCK_KEY})
         main([])
         with Session(db_engine) as session:
             assert not session.scalars(select(RankingRun)).all()
-            assert session.get(ClusterV2, 1).rank_score is None
+            assert not session.scalars(select(StoryRank)).all()
+            assert session.get(ClusterV2, 100).rank_score == 0.4
     main([])
     with Session(db_engine) as session:
-        assert session.scalars(select(RankingRun)).one().status == "succeeded"
+        run = session.scalars(select(RankingRun)).one()
+        assert run.status == "succeeded"
+        assert run.source == "story"
+        assert session.get(ClusterV2, 100).rank_score == 0.4
+        assert session.scalars(select(StoryRank)).one().story_id == 1
 
 
 def test_abandoned_run_recovered_only_by_real_run(db_engine, monkeypatch):
@@ -260,18 +315,23 @@ def test_abandoned_run_recovered_only_by_real_run(db_engine, monkeypatch):
         session.add(abandoned)
         session.commit()
         abandoned_id = abandoned.id
+        assert abandoned.source == "cluster"
     main(["--dry-run"])
     with Session(db_engine) as session:
         assert session.get(RankingRun, abandoned_id).status == "running"
+        assert session.get(RankingRun, abandoned_id).source == "cluster"
     main([])
     with Session(db_engine) as session:
         abandoned = session.get(RankingRun, abandoned_id)
         assert abandoned.status == "interrupted"
+        assert abandoned.source == "cluster"
         assert abandoned.scored_count == 10
         assert abandoned.finished_at > abandoned.started_at
         assert "Actual stop time unknown" in abandoned.error
         latest = session.scalars(select(RankingRun).order_by(RankingRun.id.desc())).first()
         assert latest.status == "succeeded"
+        assert latest.source == "story"
+        assert latest.window_days == 14
         assert latest.scored_count == latest.expired_count == latest.skipped_count == 0
 
 
@@ -279,76 +339,78 @@ def test_lost_lock_connection_aborts_uncommitted_scores(db_engine, monkeypatch):
     from database import unit_of_work
     from app.ranking import persistence
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
-    seed(db_engine, [stored_cluster(created_at=datetime.now(timezone.utc) - timedelta(hours=1))])
-    rank = persistence.rank_and_save_cluster
-    def lose_lock(cluster, *args, **kwargs):
-        result = rank(cluster, *args, **kwargs)
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.commit()
+    rank = persistence.rank_and_save_story
+
+    def lose_lock(story, *args, **kwargs):
+        result = rank(story, *args, **kwargs)
         with db_engine.begin() as connection:
             assert connection.scalar(text(
                 "SELECT pg_terminate_backend(pid) FROM pg_locks "
                 "WHERE locktype = 'advisory' AND classid = 0 AND objid = :key AND granted"
             ), {"key": RANKING_LOCK_KEY})
         return result
-    monkeypatch.setattr(persistence, "rank_and_save_cluster", lose_lock)
+
+    monkeypatch.setattr(persistence, "rank_and_save_story", lose_lock)
     with pytest.raises(DBAPIError):
         main([])
     with Session(db_engine) as session:
         run = session.scalars(select(RankingRun)).one()
         assert run.status == "failed"
         assert run.scored_count == 0
-        assert session.get(ClusterV2, 1).rank_score is None
+        assert not session.scalars(select(StoryRank)).all()
+        assert session.get(Story, 1).title == "Station"
 
 
-def test_expiry_boundary_and_zero_backfill_replace_stale_explanation(db_engine, monkeypatch):
+def test_story_window_excludes_old_merged_and_empty_stories(db_engine, monkeypatch):
     from database import unit_of_work
-    from app.ranking import persistence
     from scripts import rank_clusters
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
+
     class Clock:
         @staticmethod
         def now(tz):
             return NOW
+
     monkeypatch.setattr(rank_clusters, "datetime", Clock)
-    cutoff = NOW - timedelta(days=30)
-    stale = _on_run(stored_cluster(cluster_id=1, created_at=cutoff - timedelta(microseconds=1)), 1)
-    stale.rank_score = 0.9
-    stale.rank_components = {"explanation": {"result": {"score": 0.9}}}
-    current = _on_run(stored_cluster(cluster_id=2, created_at=cutoff), 2)
-    other = _on_run(stored_cluster(cluster_id=3, created_at=NOW), 3)
+    cutoff = NOW - timedelta(days=14)
+    cluster = stored_cluster(cluster_id=9)
+    cluster.rank_score = 0.9
+    cluster.rank_components = {"explanation": {"kept": True}}
+    old = stored_story(story_id=1, published_at=cutoff - timedelta(microseconds=1))
+    boundary = stored_story(story_id=2, published_at=cutoff, article_id=20)
+    fresh = stored_story(story_id=3, published_at=NOW, article_id=30)
+    empty = stored_story(story_id=4, published_at=NOW, with_membership=False)
+    merged = stored_story(
+        story_id=5, published_at=NOW, article_id=50, merged_into_story_id=3,
+    )
     with Session(db_engine) as session:
-        _add_run(session, 1, NOW - timedelta(days=40), production=True)
-        _add_run(session, 2, NOW, production=True)
-        _add_run(session, 3, NOW + timedelta(seconds=1), production=False)
+        _add_run(session, 1, NOW, production=True)
         session.flush()
-        session.add_all([stale, current, other])
+        session.add(cluster)
+        _seed_stories(session, [old, boundary, fresh, empty, merged])
         session.commit()
-    ranked = []
-    rank = persistence.rank_and_save_cluster
-    def record(cluster, *args, **kwargs):
-        ranked.append(cluster.id)
-        return rank(cluster, *args, **kwargs)
-    monkeypatch.setattr(persistence, "rank_and_save_cluster", record)
     main([])
-    assert ranked == [2]  # The previous run is zeroed without invoking the engine.
     with Session(db_engine) as session:
-        old = session.get(ClusterV2, 1)
-        assert old.rank_score == 0
-        assert old.rank_components["status"] == "expired"
-        assert old.rank_components["cutoff"] == cutoff.isoformat()
-        assert "explanation" not in old.rank_components
-        assert session.get(ClusterV2, 3).rank_score is None
-    main(["--days", "31"])
-    assert ranked == [2, 2]
+        scored = set(session.scalars(select(StoryRank.story_id)))
+        assert scored == {2, 3}
+        run = session.scalars(select(RankingRun)).one()
+        assert (run.scored_count, run.expired_count, run.skipped_count) == (2, 0, 0)
+        assert session.get(ClusterV2, 9).rank_score == 0.9
+        assert session.get(ClusterV2, 9).rank_components == {"explanation": {"kept": True}}
+        assert session.get(Story, 5).merged_into_story_id == 3
+    main(["--days", "15"])
     with Session(db_engine) as session:
-        assert session.get(ClusterV2, 1).rank_version == "expired-v1"
-        assert "explanation" not in session.get(ClusterV2, 1).rank_components
-    main(["--run-id", "1"])
-    assert ranked[-1] == 1
-    with Session(db_engine) as session:
-        backfill = session.get(ClusterV2, 1)
-        assert backfill.rank_version != "expired-v1"
-        assert "explanation" not in backfill.rank_components
-        assert session.get(ClusterV2, 2).rank_score is not None
+        latest = session.scalars(select(RankingRun).order_by(RankingRun.id.desc())).first()
+        assert latest.window_days == 15
+        assert latest.scored_count == 3
+        assert set(session.scalars(
+            select(StoryRank.story_id).where(StoryRank.ranking_run_id == latest.id)
+        )) == {1, 2, 3}
+        assert session.get(ClusterV2, 9).rank_score == 0.9
 
 
 def test_sigterm_handler_records_interrupted_run(db_engine, monkeypatch):
@@ -356,10 +418,15 @@ def test_sigterm_handler_records_interrupted_run(db_engine, monkeypatch):
     from database import unit_of_work
     from app.ranking import persistence
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
-    seed(db_engine, [stored_cluster(created_at=datetime.now(timezone.utc) - timedelta(hours=1))])
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.commit()
+
     def terminate(*args, **kwargs):
         handle_termination(signal.SIGTERM, None)
-    monkeypatch.setattr(persistence, "rank_and_save_cluster", terminate)
+
+    monkeypatch.setattr(persistence, "rank_and_save_story", terminate)
     with pytest.raises(SystemExit) as exc:
         main([])
     assert exc.value.code == 143
@@ -367,7 +434,8 @@ def test_sigterm_handler_records_interrupted_run(db_engine, monkeypatch):
         run = session.scalars(select(RankingRun)).one()
         assert run.status == "interrupted"
         assert run.scored_count == 0
-        assert session.get(ClusterV2, 1).rank_score is None
+        assert run.failed_story_id == 1
+        assert not session.scalars(select(StoryRank)).all()
 
 
 @pytest.mark.parametrize("table,column,value", [
@@ -417,20 +485,16 @@ def test_ranking_run_migration_preserves_scores_and_links_latest_run(db_engine, 
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     with db_engine.begin() as connection:
+        # story_rank references ranking_run, which this historical migration drops.
+        connection.execute(text("DROP TABLE IF EXISTS story_rank"))
         with Operations.context(MigrationContext.configure(connection)):
             migration.downgrade()
             assert connection.scalar(text("SELECT rank_score FROM cluster_v2 WHERE id = 1")) == 0.4
             migration.upgrade()
-    main([])
     with Session(db_engine) as session:
         cluster = session.get(ClusterV2, 1)
-        assert cluster.ranking_run_id is not None
-        run = session.get(RankingRun, cluster.ranking_run_id)
-        assert run.status == "succeeded"
-        assert run.scored_count == 1
-        session.delete(run)
-        session.commit()
-        assert session.get(ClusterV2, 1).ranking_run_id is None
+        assert cluster.rank_score == 0.4
+        assert cluster.ranking_run_id is None
 
 
 def _legacy_expired_ids(session, *, before, keep_run_id, after_id=0, limit=100):
@@ -577,37 +641,83 @@ def test_expiry_generic_plan_uses_partial_index(db_engine):
         assert "IS DISTINCT FROM %(" not in compiled
 
 
-def test_expiry_commit_per_batch_keeps_earlier_pages(db_engine, monkeypatch):
+def test_story_page_failure_keeps_earlier_pages(db_engine, monkeypatch):
     from database import unit_of_work
+    from app.ranking import stories
     monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
     now = datetime.now(timezone.utc)
-    first = _on_run(stored_cluster(cluster_id=1, created_at=now - timedelta(days=40)), 1)
-    second = _on_run(stored_cluster(cluster_id=2, created_at=now - timedelta(days=40)), 1)
     with Session(db_engine) as session:
-        _add_run(session, 1, now - timedelta(days=50), production=True)
-        _add_run(session, 2, now, production=True)
-        session.flush()
-        session.add_all([first, second])
+        _seed_stories(session, [
+            stored_story(story_id=1, published_at=now - timedelta(hours=1)),
+            stored_story(story_id=2, published_at=now - timedelta(hours=2), article_id=20),
+        ])
         session.commit()
-    original = ClusterV2Repository.get_expired_ranking_batch
+    original = stories.load_story_batch
     calls = {"n": 0}
 
-    def fail_second(self, **kwargs):
+    def fail_second(session, **kwargs):
         calls["n"] += 1
         if calls["n"] == 2:
             raise TimeoutError("canceling statement due to statement timeout")
-        return original(self, **kwargs)
+        return original(session, **kwargs)
 
-    monkeypatch.setattr(ClusterV2Repository, "get_expired_ranking_batch", fail_second)
+    monkeypatch.setattr(stories, "load_story_batch", fail_second)
     with pytest.raises(TimeoutError):
         main(["--batch-size", "1"])
     with Session(db_engine) as session:
-        expired = session.get(ClusterV2, 1)
-        untouched = session.get(ClusterV2, 2)
-        assert expired.rank_score == 0
-        assert expired.rank_components["status"] == "expired"
-        assert untouched.rank_score is None
+        saved = session.scalars(select(StoryRank.story_id)).all()
+        assert saved == [1]
+        assert session.get(Story, 2).title == "Station"
         run = session.scalars(select(RankingRun)).one()
         assert run.status == "failed"
-        assert run.expired_count == 1
-        assert run.scored_count == 0
+        assert run.source == "story"
+        assert run.scored_count == 1
+        assert run.expired_count == 0
+        assert run.failed_story_id is None
+
+
+def test_story_rank_migration_is_reversible(db_engine):
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        historical = RankingRun(
+            evaluated_at=now, started_at=now, window_days=30,
+            algorithm_version="cluster-ranking-v1", config={"version": "initial-ranking-v1"},
+            source="cluster",
+        )
+        session.add(historical)
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.commit()
+        run_id = historical.id
+    path = Path(schema.__file__).parent / "alembic/versions/c3f8a91e6b24_add_story_rank_observations.py"
+    spec = importlib.util.spec_from_file_location("story_rank_migration", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with db_engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+            assert connection.scalar(text("SELECT to_regclass('story_rank')")) is None
+            columns = set(connection.scalars(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'ranking_run'"
+            )))
+            assert "source" not in columns
+            assert "failed_story_id" not in columns
+            assert connection.scalar(text("SELECT title FROM story WHERE id = 1")) == "Station"
+            migration.upgrade()
+        assert connection.scalar(text(
+            "SELECT source FROM ranking_run WHERE id = :id"
+        ), {"id": run_id}) == "cluster"
+        connection.execute(text(
+            "INSERT INTO story_rank (ranking_run_id, story_id, score, ranked_at, rank_version, rank_components) "
+            "VALUES (:run_id, 1, 0.5, :at, 'cluster-ranking-v1', '{}'::jsonb)"
+        ), {"run_id": run_id, "at": now})
+    with pytest.raises(IntegrityError):
+        with db_engine.begin() as connection:
+            connection.execute(text(
+                "UPDATE story_rank SET score = 1.2 WHERE story_id = 1"
+            ))
+    with Session(db_engine) as session:
+        assert session.get(Story, 1).title == "Station"
+        assert session.get(Story, 1).merged_into_story_id is None
+        row = session.get(StoryRank, (run_id, 1))
+        assert row.score == 0.5

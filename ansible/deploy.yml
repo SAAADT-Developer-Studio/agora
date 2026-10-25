@@ -88,14 +88,14 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=Score the latest production clustering run and expire older ranking data
+          Description=Record observation-only ranking scores for recent stories
           Requires=docker.service
           After=docker.service network-online.target
 
           [Service]
           Type=oneshot
           WorkingDirectory={{ project_dir }}
-          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 30
+          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 14
           ExecStopPost=-/usr/bin/docker rm -f agora-ranking
           TimeoutStartSec=27min
           TimeoutStopSec=45s
@@ -108,7 +108,7 @@
         mode: "0644"
         content: |
           [Unit]
-          Description=Rank clusters every 30 minutes
+          Description=Record story ranking observations every 30 minutes
 
           [Timer]
           OnCalendar=*-*-* *:00,30:00 UTC

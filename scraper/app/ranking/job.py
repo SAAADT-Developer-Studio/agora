@@ -1,4 +1,8 @@
-"""Score one clustering run and isolate a bad cluster from the rest of the batch."""
+"""Score one page of stories, or one legacy cluster, and isolate a bad row.
+
+The scheduled job scores stories. Cluster helpers remain for the older
+observation adapter and are not called by that job.
+"""
 
 from datetime import datetime
 import logging
@@ -40,6 +44,40 @@ def score_cluster(
             return apply()
     except Exception as exc:
         logging.exception("Skipping cluster %s: %s", cluster.id, exc)
+        return "skipped"
+
+
+def score_story(
+    story, evaluated_at: datetime, config: RankingConfig, *,
+    dry_run: bool = False, ranking_run_id: int | None = None,
+) -> str:
+    """Score one story into story_rank. Return ``scored`` or ``skipped``.
+
+    Empty and merged stories are skipped. Validation failures are logged and
+    skipped. A database error rolls back only this story's savepoint. The
+    story row itself is not updated.
+    """
+    session = object_session(story)
+
+    def apply() -> str:
+        if story.merged_into_story_id is not None:
+            logging.warning("Skipping merged story %s", story.id)
+            return "skipped"
+        if not story.memberships:
+            logging.warning("Skipping empty story %s", story.id)
+            return "skipped"
+        persistence.rank_and_save_story(
+            story, evaluated_at, config, dry_run=dry_run, ranking_run_id=ranking_run_id,
+        )
+        return "scored"
+
+    try:
+        if session is None:
+            return apply()
+        with session.begin_nested():
+            return apply()
+    except Exception as exc:
+        logging.exception("Skipping story %s: %s", story.id, exc)
         return "skipped"
 
 

@@ -4,7 +4,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from database.schema import Article, ArticleCluster, ClusterV2, NewsProvider
+from database.schema import Article, ArticleCluster, ClusterV2, NewsProvider, Story, StoryArticle
 from app.ranking.contracts import RankableArticle, RankableCluster, RankingConfig
 from app.ranking.job import score_cluster
 from app.ranking.persistence import (
@@ -34,6 +34,41 @@ def stored_cluster(*, cluster_id=1, created_at=NOW, published_at=NOW - timedelta
     member.article = article
     cluster.memberships.append(member)
     return cluster
+
+
+def stored_story(
+    *, story_id=1, published_at=NOW - timedelta(hours=1), story_similarity=0.91,
+    merged_into_story_id=None, with_membership=True, title="Council approves station",
+    article_id=None,
+):
+    """One in-memory story. article_id defaults to story_id so rows stay unique."""
+    story = Story(
+        title="Station", last_article_published_at=published_at,
+        merged_into_story_id=merged_into_story_id,
+    )
+    story.id = story_id
+    if not with_membership:
+        return story
+    article_id = story_id if article_id is None else article_id
+    provider = NewsProvider(
+        key=f"publisher-{article_id}", name=f"Publisher {article_id}",
+        url=f"https://publisher-{article_id}.test", rank=0, bias_rating=None,
+    )
+    article = Article(
+        url=f"https://publisher.test/{article_id}", title=title,
+        published_at=published_at, deck=None, summary="A new railway station.",
+        author=None, content=REPORT, embedding=[1.0, 0.0], image_urls=[],
+        categories=["sport"], llm_rank=8, is_paywalled=False, news_provider_key=provider.key,
+    )
+    article.id = article_id
+    article.news_provider = provider
+    member = StoryArticle(
+        story_id=story.id, article_id=article.id, method="cosine",
+        similarity=0.2, story_similarity=story_similarity,
+    )
+    member.article = article
+    story.memberships.append(member)
+    return story
 
 
 def test_snapshot_uses_stored_inputs_and_article_history_not_snapshot_birth():

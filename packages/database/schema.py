@@ -168,6 +168,12 @@ class RankingRun(Base):
     skipped_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     failed_cluster_id: Mapped[Optional[int]] = mapped_column(Integer, default=None)
     error: Mapped[Optional[str]] = mapped_column(String, default=None)
+    # Historical rows scored HDBSCAN snapshots. Story observations set "story".
+    # The server default labels rows that already existed when the column was added.
+    source: Mapped[str] = mapped_column(
+        String, default="cluster", server_default=text("'cluster'")
+    )
+    failed_story_id: Mapped[Optional[int]] = mapped_column(Integer, default=None)
 
     __table_args__ = (
         Index("ix_ranking_run_started_at", "started_at"),
@@ -180,6 +186,41 @@ class RankingRun(Base):
             "scored_count >= 0 AND expired_count >= 0 AND skipped_count >= 0",
             name="ck_ranking_run_counts",
         ),
+        CheckConstraint(
+            "source IN ('cluster', 'story')",
+            name="ck_ranking_run_source",
+        ),
+    )
+
+
+class StoryRank(Base):
+    """Observation-only score for one story in one ranking run.
+
+    Keyed by the run and the story so a later run appends a new row. Nothing
+    in the feed, the clusterer, or the story row reads this table.
+    """
+
+    __tablename__ = "story_rank"
+
+    ranking_run_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "ranking_run.id", ondelete="CASCADE", name="story_rank_ranking_run_id_fkey",
+        ),
+        primary_key=True,
+    )
+    story_id: Mapped[int] = mapped_column(
+        ForeignKey("story.id", ondelete="CASCADE", name="story_rank_story_id_fkey"),
+        primary_key=True,
+    )
+    score: Mapped[float] = mapped_column(Float)
+    ranked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    rank_version: Mapped[str] = mapped_column(String)
+    rank_components: Mapped[dict] = mapped_column(JSONB)
+    rank_category: Mapped[Optional[str]] = mapped_column(String, default=None)
+
+    __table_args__ = (
+        CheckConstraint("score BETWEEN 0 AND 1", name="ck_story_rank_score"),
+        Index("ix_story_rank_story_id", "story_id"),
     )
 
 

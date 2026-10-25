@@ -1054,11 +1054,12 @@ evaluations before calling them. Live loading and persistence stay outside this
 engine. Thresholds and weights remain initial policies requiring calibration.
 
 
-## Saving scores and running a batch
+## Saving story observations
 
-The pure engine remains database-independent. `persistence.py` adapts stored
-articles and memberships to its contracts and saves the latest result on
-`cluster_v2`. Run commands from the Agora repository root:
+The pure engine remains database-independent and still scores a `RankableCluster`.
+`prepare_story()` adapts one streaming story to that contract. The story id is
+passed as `cluster_id` inside the engine and is not written back. Weights stay
+`initial-ranking-v1`. Run commands from the Agora repository root:
 
 ```bash
 make migrate
@@ -1068,50 +1069,87 @@ make rank-clusters ARGS="--days 7 --batch-size 50"
 make rank-clusters ARGS="--config /absolute/path/ranking-config.json"
 ```
 
-Run `make migrate` to apply the ranking columns and the `ranking_run` migration
-(`a62f4c9d810b`). Supply `DATABASE_URL` using your normal environment setup.
+Run `make migrate` to apply `story_rank` and `ranking_run.source`
+(`c3f8a91e6b24`). Supply `DATABASE_URL` using your normal environment setup.
 The ranking command loads the **repo-root `.env`**, without overriding exported
 variables, and needs no LLM API keys.
 `--help` needs no configuration at all. Config files use the existing
 `{"version": "my-config-v1", "parameters": {...}}` contract; omitted settings
 are materialized and saved, and unknown sections or invalid values are rejected.
 
-This score is **observation-only**. Nothing in the reader, feed order, or page
-cache reads it to decide what a person sees. The scheduled job and the hook at
-the end of `run_clustering` only write ranking columns and `ranking_run` rows.
+This score is **strictly observation-only**. The command reads stories and
+inserts `story_rank` plus a `ranking_run` row with `source = 'story'`. It does
+not update `story`, `story_article`, `story_summary`, or any cluster table, and
+it does not reorder a feed. Nothing in the reader, the web app, the API, the
+page cache, or the clusterer reads `story_rank`. The live vidik.si order is the
+SQL in agora-web-app (`app/lib/services/ranking.ts`), which this repository
+does not change. The batch clusterer no longer runs a ranking hook;
+`agora-ranking.timer` is the only scheduler.
 
-The default selection is the **latest production clustering run** (`cluster_run.is_production`,
-newest `created_at`, then highest id). That is the run the site shows. Clusters
-from older runs, non-production runs, and the previous 30 days of history are
-not scored. `--run-id` scores one specific run for backfill; the default remains
-the latest production run. `run_clustering` also ranks the run it just wrote.
-The timer remains the fallback when that hook does not run.
+### Which stories are scored
 
-Expiry is a separate pass and does not wait for scoring. It leaves the latest
-production run untouched. Other runs are cleared when their snapshot is older
-than `--days` (default 30) or they already have a score. Already expired zeroes
-are left untouched. Widening `--days` does not start scoring an older run;
-pass `--run-id` to backfill one. Article dates still determine story freshness
-inside the engine.
+The default window is **14 days**, the same horizon as /novo:
+`story.last_article_published_at >= evaluated_at - --days`. `--days` widens or
+narrows that window. It is not an expiry sweep. The loader also requires
+`merged_into_story_id IS NULL` and at least one `story_article` row. Merged
+stories are redirects, and an empty story has no articles to score. Those rows
+are not selected, so they are not counted as skips. A selected story that cannot
+be scored (empty title, non-finite embedding, invalid input) is logged, skipped,
+and included in `ranking_run.skipped_count`.
 
-The command pages by cluster ID, saves at most 100 clusters per transaction, and
-reports progress. Empty clusters and clusters that cannot be scored (empty title,
-non-finite embedding, membership from another run) are skipped. The skip is
-logged with the cluster id and the error, the rest of the run continues, and
-`ranking_run.skipped_count` includes them. A fatal error still rolls back the
-current batch; completed batches remain saved. Rerunning replaces each current
-cluster's latest summary and creates a new `ranking_run` record. `--dry-run`
-calculates scores and counts would-be expirations without saving anything,
-including run records. The full explanation is returned to the caller on a
-dry-run and is not written to `cluster_v2`.
+The query filters on `last_article_published_at`, which is indexed by
+`ix_story_last_article_published_at`, and pages by story id. It does not read
+`cluster_v2` and does not depend on the cluster expiry index. There is no
+expiry pass: each run appends new `story_rank` rows, and older observations
+stay. Story and cluster rows are left as they are, including any historical
+`cluster_v2.rank_*` values.
+
+`story.created_at` is not treated as an event time. The engine's anchor is the
+earliest member `published_at`, so opening a story does not make an old event
+fresh. Article `first_seen_at` still falls back to publication time when null.
+
+### Membership confidence
+
+HDBSCAN `membership_confidence` has no story equivalent.
+`story_article.story_similarity` is the cosine to the story centroid when the
+article was assigned (cosine joins require at least 0.70). When that value is
+finite and inside [0, 1], preparation copies it into
+`RankableArticle.cluster_membership_confidence`. Values a few ulps outside the
+unit interval are clamped to the boundary. Missing, non-finite, and clearly
+out-of-range values become `None`, which the unchanged engine treats as unknown
+membership (configured fallback 0.5) instead of skipping the story. The
+nearest-article `story_article.similarity` column is not that signal and is
+ignored. The engine still measures its own embedding coherence from article
+vectors; this only fills the membership slot.
+
+### What a run stores
+
+The command pages by story id, saves at most 100 stories per transaction, and
+reports progress. A fatal error rolls back the current batch; completed batches
+remain saved. Rerunning creates a new `ranking_run` and new `story_rank` rows.
+It does not replace a previous observation. `--dry-run` calculates scores and
+writes nothing, including run records. The full explanation is returned to the
+caller on a dry-run and is not stored. `story_rank.rank_components` keeps the
+same summary fields the cluster saver used to store: seven components, base
+score, weighted terms, freshness and confidence factors, versions, and the
+decay anchor. Configuration lives once on `ranking_run.config`.
+
+`ranking_run.source` is `story` for these runs and `cluster` for rows written
+before this path, including rows that received the column's server default.
+`window_days` on a story run is the selection window (default 14), not an
+expiry horizon. `expired_count` stays 0. `failed_story_id` records the story
+being scored when a run fails; `failed_cluster_id` is left null.
+
+Historical `cluster_v2` rank columns are left in place and are no longer
+updated. A display that still reads those columns, such as the temporary Ocena
+badge, keeps the last cluster observation. It does not read `story_rank`, and
+feed order does not read either one.
 
 Each run records UTC `started_at`, `evaluated_at`, `finished_at`, status, window,
-engine version, effective configuration, and committed scored/expired/skipped
-counts. Failure records include an error and, when known, the offending cluster ID.
-Counts commit in the same transaction as their cluster results. Runs can therefore
-have partial progress when they fail; successful earlier batches remain inspectable.
-Only the latest per-cluster score and explanation are retained; run metadata is
-historical, but this is not a per-run archive of every cluster's score.
+engine version, effective configuration, and committed scored/skipped counts.
+Counts commit in the same transaction as their `story_rank` rows. Runs can
+therefore have partial progress when they fail; successful earlier batches remain
+inspectable.
 
 A PostgreSQL transaction advisory lock prevents overlapping manual/scheduled
 runs, including through transaction pooling. A concurrent invocation logs a skip
@@ -1123,75 +1161,32 @@ The Ansible deployment installs `agora-ranking.timer`, running at **:00 and :30 
 using the scraper image and deployed `DATABASE_URL`. The service limits each worker
 to 25 minutes and logs to journald. Missed schedules are caught up once on startup.
 This schedule becomes active on deployment, after migrations; local `make` commands
-remain one-off runs. The job only writes backend observation fields and run records.
+remain one-off runs.
 
 Inspect runs:
 
 ```sql
-SELECT id, started_at, evaluated_at, finished_at,
+SELECT id, source, started_at, evaluated_at, finished_at,
        finished_at - started_at AS duration,
-       status, scored_count, expired_count, skipped_count,
-       failed_cluster_id, error
+       status, window_days, scored_count, expired_count, skipped_count,
+       failed_story_id, error
 FROM ranking_run
 ORDER BY id DESC
 LIMIT 20;
 ```
 
-On the deployed host:
-
-```bash
-systemctl list-timers agora-ranking.timer
-journalctl -u agora-ranking.service --since today
-```
-
-Saved cluster fields:
-
-- `rank_score`: final bounded score; NULL means unranked, zero is a valid score.
-- `ranked_at`: timezone-aware evaluation time.
-- `ranking_run_id`: run that last scored or expired this snapshot; legacy results
-  remain NULL until processed.
-- `rank_components`: summary fields only. The seven normalized components, base
-  score, weighted terms, applied freshness/confidence factors, component versions,
-  decay anchor, and latest meaningful-development time when available. The full
-  per-article explanation is not stored.
-- `rank_version`: engine algorithm version.
-- `ranking_run_id`: the run whose `ranking_run.config` holds the effective
-  configuration, including defaults. Configuration is not copied onto each cluster.
-- `rank_category`: category used for decay. One primary-category vote per publisher
-  from its earliest categorized eligible report, excluding detected family copies;
-  ties break alphabetically. Unknown-content reports may vote. Missing category
-  uses the engine's configured default half-life.
-
-`rank_and_save_cluster(..., dry_run=True)` returns the full `ClusterRankingExplanation`
-and writes nothing. A real save stores the summary above. Reranking replaces that
-summary rather than keeping a history. Article text and embedding vectors remain
-in their source tables.
-
-Inspect one cluster and the configuration for its run:
+Inspect one story's observations and the configuration for a run:
 
 ```sql
-SELECT c.rank_score, c.ranked_at, c.rank_components, r.config
-FROM cluster_v2 c
-LEFT JOIN ranking_run r ON r.id = c.ranking_run_id
-WHERE c.id = :cluster_id;
+SELECT s.score, s.ranked_at, s.rank_category, s.rank_components, r.config
+FROM story_rank s
+JOIN ranking_run r ON r.id = s.ranking_run_id
+WHERE s.story_id = :story_id
+ORDER BY s.ranking_run_id DESC;
 ```
 
-New scraping runs record article `first_seen_at` after discovery and before
-extraction/analysis. Historical values stay NULL, preserving the engine's existing
-publication-time fallback. HDBSCAN's `probabilities_` are saved as
-`article_cluster.membership_confidence` in normal and bootstrap clustering runs.
-Noise converted into a singleton, legacy imports, and old memberships have unknown
-confidence. HDBSCAN never assigned those articles to their newly created singleton
-clusters. `cluster_run.params` now records the actual HDBSCAN parameters and input
-policy. Snapshot creation time is never used to make an old event fresh again;
-the loader supplies the earliest member publication as the available event anchor.
-
-The sister web app displays a temporary **Ocena** badge when a score exists,
-including zero. Cards on home/category pages and cluster detail pages show it;
-feed ordering still uses the web app's existing ranking. Existing KV/page caches
-may delay score updates until they refresh. The badge is optional for older cached
-payloads and the reader tolerates databases without the new column. No web-side
-schema migration or generated Drizzle schema edit is needed for this test display.
+`rank_and_save_story(..., dry_run=True)` returns the full `ClusterRankingExplanation`
+and writes nothing. A real save inserts `story_rank` and does not modify the story.
 
 Run PostgreSQL integration checks against a disposable database with
 `RANKING_TEST_DATABASE_URL` set in addition to the usual test environment. These
