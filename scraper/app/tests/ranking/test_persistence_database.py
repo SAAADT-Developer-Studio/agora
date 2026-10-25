@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import os
 from pathlib import Path
+import re
 import uuid
 
 from alembic.migration import MigrationContext
@@ -19,13 +20,21 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from database import schema
 from database.repositories import ClusterV2Repository, expired_ranking_statement
-from database.schema import Base, ClusterRun, ClusterV2, RankingRun, Story, StoryRank
+from database.schema import Base, ClusterRun, ClusterV2, RankingRun, Story, StoryRank, StorySummary
 from app.ranking.contracts import RankingConfig
-from app.ranking.persistence import prepare_cluster
+from app.ranking.persistence import SCORE_ONLY_COMPONENTS, prepare_cluster
 from app.tests.ranking.test_persistence import NOW, stored_cluster, stored_story
 from scripts.rank_clusters import RANKING_LOCK_KEY, handle_termination, main
 
 pytestmark = pytest.mark.integration
+
+# story_rank is the observation table and must stay writable. story, story_article,
+# and story_summary must not: underscore is a word character, so a bare story
+# name does not match story_rank.
+_STORY_TABLE_WRITE = re.compile(
+    r"\b(?:insert\s+into|update|delete\s+from)\s+\"?(?:story|story_article|story_summary)\"?(?!\w)",
+    re.IGNORECASE,
+)
 
 
 @pytest.fixture
@@ -168,6 +177,13 @@ def test_command_dry_run_then_saves_story_pages_and_reruns(db_engine, monkeypatc
     assert "cluster_v2" not in observed_sql
     assert "article_cluster" not in observed_sql
     assert "cluster_run" not in observed_sql
+    assert _STORY_TABLE_WRITE.search("update story set title = 'x'")
+    assert _STORY_TABLE_WRITE.search('delete from "story_article"')
+    assert _STORY_TABLE_WRITE.search("insert into story_summary (id) values (1)")
+    assert not _STORY_TABLE_WRITE.search("update story_rank set rank_components = '{}'")
+    assert not _STORY_TABLE_WRITE.search("insert into story_rank (story_id) values (1)")
+    assert _STORY_TABLE_WRITE.search(observed_sql) is None
+    assert "story_rank" in observed_sql
     with Session(db_engine) as session:
         assert session.get(ClusterV2, 100).rank_score == 0.4
         assert session.get(ClusterV2, 100).ranking_run_id is None
@@ -204,7 +220,12 @@ def test_command_dry_run_then_saves_story_pages_and_reruns(db_engine, monkeypatc
         assert len(history) == 2
         assert {row.ranking_run_id for row in history} == {first_run_id, runs[1].id}
         previous = next(row for row in history if row.ranking_run_id == first_run_id)
+        current = next(row for row in history if row.ranking_run_id == runs[1].id)
         assert previous.ranked_at == first_ranked_at
+        assert previous.rank_components == SCORE_ONLY_COMPONENTS
+        assert 0 <= previous.score <= 1
+        assert "coverage_score" in current.rank_components
+        assert current.rank_components != SCORE_ONLY_COMPONENTS
         assert session.get(ClusterV2, 100).rank_score == 0.4
         assert session.get(Story, 2).last_article_published_at == fresh_published_at
 
@@ -648,8 +669,8 @@ def test_story_page_failure_keeps_earlier_pages(db_engine, monkeypatch):
     now = datetime.now(timezone.utc)
     with Session(db_engine) as session:
         _seed_stories(session, [
-            stored_story(story_id=1, published_at=now - timedelta(hours=1)),
-            stored_story(story_id=2, published_at=now - timedelta(hours=2), article_id=20),
+            stored_story(story_id=1, published_at=now - timedelta(hours=2)),
+            stored_story(story_id=2, published_at=now - timedelta(hours=1), article_id=20),
         ])
         session.commit()
     original = stories.load_story_batch
@@ -698,7 +719,7 @@ def test_story_rank_migration_is_reversible(db_engine):
             assert connection.scalar(text("SELECT to_regclass('story_rank')")) is None
             columns = set(connection.scalars(text(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'ranking_run'"
+                "WHERE table_schema = current_schema() AND table_name = 'ranking_run'"
             )))
             assert "source" not in columns
             assert "failed_story_id" not in columns
@@ -721,3 +742,203 @@ def test_story_rank_migration_is_reversible(db_engine):
         assert session.get(Story, 1).merged_into_story_id is None
         row = session.get(StoryRank, (run_id, 1))
         assert row.score == 0.5
+
+
+def test_ranked_at_index_migration_keeps_rows(db_engine):
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        run = RankingRun(
+            evaluated_at=now, started_at=now, window_days=14,
+            algorithm_version="cluster-ranking-v1", config={}, source="story", status="succeeded",
+        )
+        session.add(run)
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.flush()
+        session.add(StoryRank(
+            ranking_run_id=run.id, story_id=1, score=0.5, ranked_at=now,
+            rank_version="v", rank_components={"coverage_score": 0.5},
+        ))
+        session.commit()
+        run_id = run.id
+    path = Path(schema.__file__).parent / "alembic/versions/d8e2b71c4a09_index_story_rank_ranked_at.py"
+    spec = importlib.util.spec_from_file_location("story_rank_ranked_at_index", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with db_engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            assert connection.scalar(text("SELECT to_regclass('ix_story_rank_ranked_at')")) is not None
+            migration.downgrade()
+            assert connection.scalar(text("SELECT to_regclass('ix_story_rank_ranked_at')")) is None
+            assert connection.scalar(text("SELECT score FROM story_rank WHERE story_id = 1")) == 0.5
+            assert connection.scalar(text("SELECT title FROM story WHERE id = 1")) == "Station"
+            migration.upgrade()
+            assert connection.scalar(text("SELECT to_regclass('ix_story_rank_ranked_at')")) is not None
+    with Session(db_engine) as session:
+        assert session.get(StoryRank, (run_id, 1)).score == 0.5
+        assert session.get(Story, 1).title == "Station"
+
+
+def test_retention_deletes_old_story_observations_only(db_engine, monkeypatch):
+    from database import unit_of_work
+    from scripts import rank_clusters
+    monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
+    monkeypatch.setattr(rank_clusters, "STORY_RANK_RETENTION_BATCH", 1)
+    now = datetime.now(timezone.utc)
+    old_at = now - timedelta(days=20)
+    recent_at = now - timedelta(days=1)
+    cluster = stored_cluster(cluster_id=100, created_at=now)
+    cluster.rank_score = 0.9
+    cluster.rank_components = {"status": "scored"}
+    with Session(db_engine) as session:
+        _add_run(session, 1, now, production=True)
+        session.flush()
+        session.add(cluster)
+        _seed_stories(session, [
+            stored_story(story_id=1, published_at=old_at),
+            stored_story(story_id=2, published_at=old_at, article_id=20),
+            stored_story(story_id=3, published_at=recent_at, article_id=30),
+        ])
+        session.add(StorySummary(
+            story_id=1, title="Kept summary",
+            bullets=[{"text": "point", "article_ids": [1]}],
+            lead_article_id=1, model="test", prompt_version=1,
+        ))
+        cluster_observation = RankingRun(
+            evaluated_at=old_at, started_at=old_at, finished_at=old_at, window_days=30,
+            algorithm_version="cluster-ranking-v1", config={}, status="succeeded", source="cluster",
+        )
+        old_run = RankingRun(
+            evaluated_at=old_at, started_at=old_at, finished_at=old_at, window_days=14,
+            algorithm_version="cluster-ranking-v1", config={}, status="succeeded", source="story",
+        )
+        recent_run = RankingRun(
+            evaluated_at=recent_at, started_at=recent_at, finished_at=recent_at, window_days=14,
+            algorithm_version="cluster-ranking-v1", config={}, status="succeeded", source="story",
+        )
+        still_running = RankingRun(
+            evaluated_at=recent_at, started_at=recent_at, window_days=14,
+            algorithm_version="cluster-ranking-v1", config={}, status="running", source="story",
+        )
+        session.add_all([cluster_observation, old_run, recent_run, still_running])
+        session.flush()
+        session.add_all([
+            StoryRank(
+                ranking_run_id=old_run.id, story_id=1, score=0.4, ranked_at=old_at,
+                rank_version="v", rank_components={"coverage_score": 0.4},
+            ),
+            StoryRank(
+                ranking_run_id=old_run.id, story_id=2, score=0.5,
+                ranked_at=old_at + timedelta(seconds=1),
+                rank_version="v", rank_components={"coverage_score": 0.5},
+            ),
+            StoryRank(
+                ranking_run_id=recent_run.id, story_id=3, score=0.6, ranked_at=recent_at,
+                rank_version="v", rank_components={"coverage_score": 0.6},
+            ),
+        ])
+        session.commit()
+        ids = {
+            "cluster": cluster_observation.id,
+            "old": old_run.id,
+            "recent": recent_run.id,
+            "running": still_running.id,
+        }
+    main(["--dry-run"])
+    with Session(db_engine) as session:
+        assert session.get(RankingRun, ids["old"]).status == "succeeded"
+        assert session.get(StoryRank, (ids["old"], 1)).score == 0.4
+        assert session.get(StoryRank, (ids["old"], 2)).score == 0.5
+        assert len(session.scalars(select(RankingRun)).all()) == 4
+    main([])
+    with Session(db_engine) as session:
+        assert session.get(RankingRun, ids["cluster"]).source == "cluster"
+        assert session.get(RankingRun, ids["cluster"]).status == "succeeded"
+        assert session.get(RankingRun, ids["old"]) is None
+        assert session.get(StoryRank, (ids["old"], 1)) is None
+        assert session.get(StoryRank, (ids["old"], 2)) is None
+        kept = session.get(StoryRank, (ids["recent"], 3))
+        assert kept.score == 0.6
+        assert kept.ranked_at == recent_at
+        assert kept.rank_components == SCORE_ONLY_COMPONENTS
+        recovered = session.get(RankingRun, ids["running"])
+        assert recovered.status == "interrupted"
+        assert recovered.source == "story"
+        latest = session.scalars(select(RankingRun).order_by(RankingRun.id.desc())).first()
+        assert latest.source == "story"
+        assert latest.status == "succeeded"
+        assert latest.expired_count == 2
+        assert latest.scored_count == 1
+        fresh = session.scalars(select(StoryRank).where(StoryRank.ranking_run_id == latest.id)).one()
+        assert fresh.story_id == 3
+        assert "coverage_score" in fresh.rank_components
+        assert session.get(ClusterV2, 100).rank_score == 0.9
+        assert session.get(ClusterV2, 100).rank_components == {"status": "scored"}
+        assert session.get(Story, 1).title == "Station"
+        assert session.get(Story, 1).last_article_published_at == old_at
+        assert session.get(StorySummary, 1).title == "Kept summary"
+        assert set(session.scalars(select(Story.id))) == {1, 2, 3}
+
+
+def _explain(session, statement) -> str:
+    compiled = statement.compile(
+        dialect=session.bind.dialect, compile_kwargs={"literal_binds": True},
+    )
+    return "\n".join(session.scalars(text("EXPLAIN " + str(compiled))))
+
+
+def test_story_page_uses_publication_index(db_engine):
+    from app.ranking.stories import load_story_batch, story_ranking_statement
+    since = datetime.now(timezone.utc) - timedelta(days=14)
+    old = since - timedelta(days=40)
+    recent = since + timedelta(days=1)
+    with db_engine.begin() as connection:
+        connection.execute(text(
+            "INSERT INTO news_provider (key, name, url, rank) "
+            "VALUES ('p', 'P', 'https://p.test', 0)"
+        ))
+        connection.execute(text(
+            "INSERT INTO story (id, title, last_article_published_at, created_at) "
+            "SELECT g, 'old', :old, :old FROM generate_series(1, 20000) AS g"
+        ), {"old": old})
+        connection.execute(text(
+            "INSERT INTO story (id, title, last_article_published_at, created_at) "
+            "SELECT 20000 + g, 'new', :recent, :recent FROM generate_series(1, 40) AS g"
+        ), {"recent": recent})
+        connection.execute(text(
+            "INSERT INTO story (id, title, last_article_published_at, created_at, merged_into_story_id) "
+            "VALUES (20041, 'merged', :recent, :recent, 20001), "
+            "(20042, 'empty', :recent, :recent, NULL)"
+        ), {"recent": recent})
+        connection.execute(text(
+            "INSERT INTO article (id, url, title, published_at, embedding, news_provider_key) "
+            "SELECT g, 'https://p.test/' || g, 't', :at, ARRAY[1.0]::double precision[], 'p' "
+            "FROM generate_series(1, 20041) AS g"
+        ), {"at": recent})
+        connection.execute(text(
+            "INSERT INTO story_article (story_id, article_id, method, assigned_at) "
+            "SELECT g, g, 'cosine', :at FROM generate_series(1, 20041) AS g"
+        ), {"at": recent})
+        connection.execute(text("ANALYZE story"))
+        connection.execute(text("ANALYZE story_article"))
+    with Session(db_engine) as session:
+        plan = _explain(session, story_ranking_statement(since=since, limit=10))
+        assert "ix_story_last_article_published_at" in plan, plan
+        assert "story_pkey" not in plan, plan
+        collected = []
+        cursor_at = None
+        cursor_id = 0
+        while True:
+            page = load_story_batch(
+                session, since=since, after_published_at=cursor_at, after_id=cursor_id, limit=7,
+            )
+            if not page:
+                break
+            collected.extend(story.id for story in page)
+            cursor_at = page[-1].last_article_published_at
+            cursor_id = page[-1].id
+        assert collected == list(range(20001, 20041))
+        paged = _explain(session, story_ranking_statement(
+            since=since, after_published_at=cursor_at, after_id=20001, limit=10,
+        ))
+        assert "ix_story_last_article_published_at" in paged, paged
+        assert "story_pkey" not in paged, paged

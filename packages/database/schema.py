@@ -197,7 +197,11 @@ class StoryRank(Base):
     """Observation-only score for one story in one ranking run.
 
     Keyed by the run and the story so a later run appends a new row. Nothing
-    in the feed, the clusterer, or the story row reads this table.
+    in the feed, the clusterer, or the story row reads this table. The latest
+    row for a story keeps the component summary; older rows for that story keep
+    the score and store ``{"retained": "score"}``. Rows older than the
+    retention window are deleted by the ranking job, which also removes the
+    finished ``source='story'`` runs those rows belonged to.
     """
 
     __tablename__ = "story_rank"
@@ -221,6 +225,7 @@ class StoryRank(Base):
     __table_args__ = (
         CheckConstraint("score BETWEEN 0 AND 1", name="ck_story_rank_score"),
         Index("ix_story_rank_story_id", "story_id"),
+        Index("ix_story_rank_ranked_at", "ranked_at"),
     )
 
 

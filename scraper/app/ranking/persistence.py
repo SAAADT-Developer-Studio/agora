@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 from math import isfinite
 
+from sqlalchemy import update
 from sqlalchemy.orm import object_session
 
 from database.schema import ClusterV2, Story, StoryRank
@@ -26,6 +27,9 @@ DEFAULT_CONFIG_VERSION = "initial-ranking-v1"
 # ranking_run.source. Cluster labels rows written against HDBSCAN snapshots.
 RANKING_SOURCE_CLUSTER = "cluster"
 RANKING_SOURCE_STORY = "story"
+# Older observations keep score, ranked_at, rank_version, and rank_category.
+# The component summary stays only on the latest row for that story.
+SCORE_ONLY_COMPONENTS = {"retained": "score"}
 # Cosine of normalized vectors can sit a few ulps outside [0, 1].
 _SIMILARITY_EPSILON = 1e-6
 CONFIG_SECTIONS = {
@@ -275,8 +279,12 @@ def rank_and_save_story(
 
     ``dry_run=True`` returns the explanation and writes nothing. A real save
     requires ``ranking_run_id`` and adds a ``StoryRank`` to the story's
-    session; the caller owns the transaction. Configuration stays on
-    ``ranking_run``. This does not read or write cluster tables.
+    session; the caller owns the transaction. The new row keeps the component
+    summary. Earlier rows for the same story are reduced to
+    ``SCORE_ONLY_COMPONENTS`` in that same session, so a rollback drops the
+    insert and the slim together. Score, time, version, and category on those
+    earlier rows stay. Configuration stays on ``ranking_run``. This does not
+    read or write cluster tables, and it does not delete rows.
     """
     config = resolve_ranking_config(config)
     snapshot = prepare_story(story, evaluated_at, config)
@@ -285,7 +293,21 @@ def rank_and_save_story(
         return explanation
     if ranking_run_id is None:
         raise ValueError("ranking_run_id is required to record a story score")
-    row = StoryRank(
+    session = object_session(story)
+    if session is None:
+        raise RuntimeError(f"Story {story.id} is not attached to a session")
+    # Reduce rows that still hold a full summary. After the first slim only
+    # the previous latest row matches, via ix_story_rank_story_id.
+    session.execute(
+        update(StoryRank)
+        .where(
+            StoryRank.story_id == story.id,
+            StoryRank.ranking_run_id != ranking_run_id,
+            StoryRank.rank_components.is_distinct_from(SCORE_ONLY_COMPONENTS),
+        )
+        .values(rank_components=SCORE_ONLY_COMPONENTS)
+    )
+    session.add(StoryRank(
         ranking_run_id=ranking_run_id,
         story_id=story.id,
         score=explanation.result.score,
@@ -293,11 +315,7 @@ def rank_and_save_story(
         rank_version=explanation.algorithm_version,
         rank_components=_summary_components(explanation),
         rank_category=snapshot.category,
-    )
-    session = object_session(story)
-    if session is None:
-        raise RuntimeError(f"Story {story.id} is not attached to a session")
-    session.add(row)
+    ))
     return explanation
 
 

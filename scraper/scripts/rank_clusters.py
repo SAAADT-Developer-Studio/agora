@@ -3,6 +3,11 @@
 The score is observation-only. It is not an input to feed ordering, and this
 command does not update story rows or any cluster table. Each run inserts
 ``story_rank`` rows and one ``ranking_run`` row with ``source='story'``.
+
+Full component summaries are kept only on the latest row per story. After
+scoring, the run deletes ``story_rank`` rows older than the retention window
+and finished ``source='story'`` runs that no longer have any. Cluster rows,
+story rows, and ``source='cluster'`` ranking runs are left in place.
 """
 
 import argparse
@@ -19,6 +24,10 @@ RANKING_LOCK_KEY = 726_264_001
 
 # Same horizon /novo uses: story.last_article_published_at within 14 days.
 DEFAULT_STORY_WINDOW_DAYS = 14
+# Independent of --days. A one-off shorter window must not delete the history
+# the scheduled 14-day run still records.
+STORY_RANK_RETENTION_DAYS = DEFAULT_STORY_WINDOW_DAYS
+STORY_RANK_RETENTION_BATCH = 1000
 
 
 def positive_int(value: str) -> int:
@@ -39,15 +48,86 @@ def ranking_session():
 
 
 def finish_run(run_id: int, status: str, *, error: str | None = None,
-               failed_story_id: int | None = None) -> None:
+               failed_story_id: int | None = None, expired_count: int | None = None) -> None:
     from database.schema import RankingRun
     from sqlalchemy import update
 
+    values = dict(
+        status=status, finished_at=datetime.now(timezone.utc),
+        error=error, failed_story_id=failed_story_id,
+    )
+    if expired_count is not None:
+        values["expired_count"] = expired_count
     with ranking_session() as uow:
-        uow.session.execute(update(RankingRun).where(RankingRun.id == run_id).values(
-            status=status, finished_at=datetime.now(timezone.utc),
-            error=error, failed_story_id=failed_story_id,
-        ))
+        uow.session.execute(update(RankingRun).where(RankingRun.id == run_id).values(**values))
+
+
+def _deleted_rows(result) -> int:
+    count = getattr(result, "rowcount", None)
+    if count is None or count < 0:
+        return 0
+    return count
+
+
+def _delete_batches(sql: str, params: dict, *, guard) -> int:
+    """Run a bounded DELETE until a batch removes fewer rows than the limit.
+
+    Each batch commits on its own. ``guard`` holds the advisory lock; touching
+    it keeps that transaction inside its idle timeout.
+    """
+    from sqlalchemy import text
+
+    removed_total = 0
+    while True:
+        with ranking_session() as uow:
+            removed = _deleted_rows(uow.session.execute(text(sql), params))
+        removed_total += removed
+        guard.session.execute(text("SELECT 1"))
+        if removed < STORY_RANK_RETENTION_BATCH:
+            return removed_total
+
+
+def retain_story_observations(cutoff: datetime, *, guard) -> int:
+    """Delete old story observations. Return how many story_rank rows went.
+
+    Only ``story_rank`` and finished ``ranking_run`` rows with ``source='story'``
+    are deleted. A ``running`` story run is left for abandoned-run recovery.
+    ``source='cluster'`` runs, stories, and cluster rows are not modified.
+    """
+    expired = _delete_batches(
+        """
+        DELETE FROM story_rank
+        WHERE (ranking_run_id, story_id) IN (
+            SELECT ranking_run_id, story_id
+            FROM story_rank
+            WHERE ranked_at < :cutoff
+            ORDER BY ranked_at
+            LIMIT :batch
+        )
+        """,
+        {"cutoff": cutoff, "batch": STORY_RANK_RETENTION_BATCH},
+        guard=guard,
+    )
+    _delete_batches(
+        """
+        DELETE FROM ranking_run
+        WHERE id IN (
+            SELECT id FROM ranking_run
+            WHERE source = 'story'
+              AND status <> 'running'
+              AND evaluated_at < :cutoff
+              AND NOT EXISTS (
+                  SELECT 1 FROM story_rank
+                  WHERE story_rank.ranking_run_id = ranking_run.id
+              )
+            ORDER BY id
+            LIMIT :batch
+        )
+        """,
+        {"cutoff": cutoff, "batch": STORY_RANK_RETENTION_BATCH},
+        guard=guard,
+    )
+    return expired
 
 
 def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, skipped, failure):
@@ -57,12 +137,14 @@ def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, sk
     from app.ranking.job import score_story
     from app.ranking.stories import load_story_batch
 
+    after_published_at = None
     after_id = 0
     while True:
         batch_scored = batch_skipped = 0
         with ranking_session() as uow:
             stories = load_story_batch(
-                uow.session, since=since, after_id=after_id, limit=args.batch_size,
+                uow.session, since=since, after_published_at=after_published_at,
+                after_id=after_id, limit=args.batch_size,
             )
             if not stories:
                 break
@@ -79,6 +161,7 @@ def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, sk
                 else:
                     batch_skipped += 1
             failure["story_id"] = None
+            after_published_at = stories[-1].last_article_published_at
             after_id = stories[-1].id
             if run_id is not None:
                 # Counts and their scores commit together. A failed batch
@@ -92,9 +175,9 @@ def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, sk
         scored += batch_scored
         skipped += batch_skipped
         logging.info(
-            "Run %s%s: %d scored, %d skipped",
+            "Run %s%s: %d scored, %d expired, %d skipped",
             run_id, " (dry run; no writes)" if args.dry_run else "",
-            scored, skipped,
+            scored, 0, skipped,
         )
     return scored, skipped
 
@@ -113,6 +196,14 @@ def run_ranking(args, config) -> None:
         # The worker is bounded to 25 minutes by the deployed service. Keep its
         # lock transaction alive between batches, including expensive scoring.
         guard.session.execute(text("SET LOCAL idle_in_transaction_session_timeout = '30min'"))
+        # A failed migration leaves the timer enabled. Exit 0 instead of
+        # raising every half hour until story_rank exists. Do this before
+        # inserting a ranking_run: that insert needs the source column too.
+        if guard.session.scalar(text("SELECT to_regclass('story_rank')")) is None:
+            logging.error(
+                "story_rank is missing; skipping this ranking run until migrations create it"
+            )
+            return
         evaluated_at = datetime.now(timezone.utc)
         since = evaluated_at - timedelta(days=args.days)
         run_id = None
@@ -136,7 +227,7 @@ def run_ranking(args, config) -> None:
             "Ranking run %s scores stories with last_article_published_at >= %s",
             run_id if run_id is not None else "dry-run", since,
         )
-        scored = skipped = 0
+        scored = skipped = expired = 0
         failure = {"story_id": None}
         try:
             scored, skipped = _score_pages(
@@ -145,7 +236,9 @@ def run_ranking(args, config) -> None:
             )
             if run_id is not None:
                 guard.session.execute(text("SELECT 1"))
-                finish_run(run_id, "succeeded")
+                cutoff = evaluated_at - timedelta(days=STORY_RANK_RETENTION_DAYS)
+                expired = retain_story_observations(cutoff, guard=guard)
+                finish_run(run_id, "succeeded", expired_count=expired)
         except BaseException as exc:
             if run_id is not None:
                 try:
@@ -159,9 +252,9 @@ def run_ranking(args, config) -> None:
             logging.exception("Ranking run %s stopped; current batch rolled back", run_id)
             raise
         logging.info(
-            "Finished run %s%s: %d scored, %d skipped. Evaluation time: %s",
+            "Finished run %s%s: %d scored, %d expired, %d skipped. Evaluation time: %s",
             run_id, " (dry run; no writes)" if args.dry_run else "",
-            scored, skipped, evaluated_at,
+            scored, expired, skipped, evaluated_at,
         )
 
 
