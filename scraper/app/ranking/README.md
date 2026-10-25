@@ -1070,8 +1070,9 @@ make rank-clusters ARGS="--config /absolute/path/ranking-config.json"
 ```
 
 Run `make migrate` to apply `story_rank`, `ranking_run.source`
-(`c3f8a91e6b24`), and `ix_story_rank_ranked_at` (`d8e2b71c4a09`). Supply
-`DATABASE_URL` using your normal environment setup.
+(`c3f8a91e6b24`), `ix_story_rank_ranked_at` (`d8e2b71c4a09`), and
+`ix_story_rank_unretained` (`e4b7c2a81d06`). Supply `DATABASE_URL` using your
+normal environment setup.
 The ranking command loads the **repo-root `.env`**, without overriding exported
 variables, and needs no LLM API keys.
 `--help` needs no configuration at all. Config files use the existing
@@ -1098,27 +1099,31 @@ are not selected, so they are not counted as skips. A selected story that cannot
 be scored (empty title, non-finite embedding, invalid input) is logged, skipped,
 and included in `ranking_run.skipped_count`.
 
-The loader filters on `last_article_published_at` and pages by
-`(last_article_published_at, id)`, which is the order of
-`ix_story_last_article_published_at`. PostgreSQL range-scans that index.
-Paging by story id alone walks `story_pkey` and applies the time predicate as
-a filter. The query does not read `cluster_v2` and does not depend on the
-cluster expiry index.
+The loader filters on `last_article_published_at` and pages by `story.id`.
+Publication time is not the cursor: the clusterer updates that column on the
+same schedule as this job, and a cursor on it loads a story again after the
+timestamp moves. Story ids do not move. The page plan walks `story_pkey` and
+applies the time predicate as a filter. Stories that already have a
+`story_rank` for this run are excluded. The insert is `ON CONFLICT DO NOTHING`,
+so a repeat is not a skip and not an error. The query does not read
+`cluster_v2` and does not depend on the cluster expiry index.
 
 Each run still appends a `story_rank` row. Growth is bounded in two places,
 and both touch only `story_rank` and `ranking_run` rows with `source = 'story'`:
 
-- The new row keeps the component summary. Earlier rows for that story are
-  reduced to `{"retained": "score"}`. Score, `ranked_at`, `rank_version`, and
-  `rank_category` stay. A row already reduced is not rewritten, so after the
-  first slim a story updates one previous row.
-- After scoring, the run deletes `story_rank` rows with `ranked_at` older than
-  14 days, in batches, using `ix_story_rank_ranked_at`. It then deletes finished
-  `source = 'story'` runs older than that cutoff that no longer have a
-  `story_rank` row. `running` story runs are left for abandoned-run recovery.
-  `source = 'cluster'` runs are never deleted. `expired_count` is how many
-  `story_rank` rows that delete removed. `--days` does not change the 14-day
-  retention window. `--dry-run` does not slim or delete.
+- The new row keeps the component summary. Only the previous full row for that
+  story is reduced to `{"retained": "score"}`. Score, `ranked_at`,
+  `rank_version`, and `rank_category` stay. The update reads
+  `ix_story_rank_unretained` (`e4b7c2a81d06`), which contains rows that are not
+  that marker, and stops at one row. Older full summaries are left for retention.
+- After the run is marked succeeded, it deletes `story_rank` rows with
+  `ranked_at` older than 14 days, in batches, using `ix_story_rank_ranked_at`.
+  It then deletes finished `source = 'story'` runs older than that cutoff that
+  no longer have a `story_rank` row. A retention error is logged and does not
+  change the succeeded run. `running` story runs are left for abandoned-run
+  recovery. `source = 'cluster'` runs are never deleted. `expired_count` is
+  how many `story_rank` rows that delete removed. `--days` does not change the
+  14-day retention window. `--dry-run` does not slim or delete.
 
 Story and cluster rows are left as they are, including any historical
 `cluster_v2.rank_*` values. If `story_rank` is missing (a migration did not
@@ -1145,18 +1150,18 @@ vectors; this only fills the membership slot.
 
 ### What a run stores
 
-The command pages by `(last_article_published_at, id)`, saves at most 100
-stories per transaction, and reports progress. A fatal error rolls back the
-current batch; completed batches remain saved. Rerunning creates a new
-`ranking_run` and new `story_rank` rows. It does not replace a previous
-observation's score. `--dry-run` calculates scores and writes nothing, including
-run records and retention deletes. The full explanation is returned to the
-caller on a dry-run and is not stored. The latest `story_rank.rank_components`
-for a story keeps the same summary fields the cluster saver used to store:
-seven components, base score, weighted terms, freshness and confidence factors,
-versions, and the decay anchor. Older rows for that story keep
-`{"retained": "score"}` until retention deletes them. Configuration lives once
-on `ranking_run.config`.
+The command pages by story id, saves at most 100 stories per transaction, and
+reports progress (scored and skipped; expiry is counted only on the finished
+line, after retention). A fatal error rolls back the current batch; completed
+batches remain saved. Rerunning creates a new `ranking_run` and new
+`story_rank` rows. It does not replace a previous observation's score.
+`--dry-run` calculates scores and writes nothing, including run records and
+retention deletes. The full explanation is returned to the caller on a dry-run
+and is not stored. The latest `story_rank.rank_components` for a story keeps
+the same summary fields the cluster saver used to store: seven components, base
+score, weighted terms, freshness and confidence factors, versions, and the
+decay anchor. The previous row for that story keeps `{"retained": "score"}`
+until retention deletes it. Configuration lives once on `ranking_run.config`.
 
 `ranking_run.source` is `story` for these runs and `cluster` for rows written
 before this path, including rows that received the column's server default.

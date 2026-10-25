@@ -137,14 +137,13 @@ def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, sk
     from app.ranking.job import score_story
     from app.ranking.stories import load_story_batch
 
-    after_published_at = None
     after_id = 0
     while True:
         batch_scored = batch_skipped = 0
         with ranking_session() as uow:
             stories = load_story_batch(
-                uow.session, since=since, after_published_at=after_published_at,
-                after_id=after_id, limit=args.batch_size,
+                uow.session, since=since, after_id=after_id, limit=args.batch_size,
+                ranking_run_id=run_id,
             )
             if not stories:
                 break
@@ -158,10 +157,9 @@ def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, sk
                     batch_scored += 1
                     if batch_scored % 25 == 0:
                         logging.info("Calculated %d scores so far", scored + batch_scored)
-                else:
+                elif outcome == "skipped":
                     batch_skipped += 1
             failure["story_id"] = None
-            after_published_at = stories[-1].last_article_published_at
             after_id = stories[-1].id
             if run_id is not None:
                 # Counts and their scores commit together. A failed batch
@@ -175,9 +173,9 @@ def _score_pages(args, config, *, run_id, evaluated_at, since, guard, scored, sk
         scored += batch_scored
         skipped += batch_skipped
         logging.info(
-            "Run %s%s: %d scored, %d expired, %d skipped",
+            "Run %s%s: %d scored, %d skipped",
             run_id, " (dry run; no writes)" if args.dry_run else "",
-            scored, 0, skipped,
+            scored, skipped,
         )
     return scored, skipped
 
@@ -236,9 +234,7 @@ def run_ranking(args, config) -> None:
             )
             if run_id is not None:
                 guard.session.execute(text("SELECT 1"))
-                cutoff = evaluated_at - timedelta(days=STORY_RANK_RETENTION_DAYS)
-                expired = retain_story_observations(cutoff, guard=guard)
-                finish_run(run_id, "succeeded", expired_count=expired)
+                finish_run(run_id, "succeeded")
         except BaseException as exc:
             if run_id is not None:
                 try:
@@ -251,6 +247,22 @@ def run_ranking(args, config) -> None:
                     logging.exception("Could not finalize ranking run %s; next run will recover it", run_id)
             logging.exception("Ranking run %s stopped; current batch rolled back", run_id)
             raise
+        if run_id is not None:
+            # Scores are already committed. Retention must not turn that into
+            # a failed run, or the timer looks like scoring broke.
+            try:
+                cutoff = evaluated_at - timedelta(days=STORY_RANK_RETENTION_DAYS)
+                expired = retain_story_observations(cutoff, guard=guard)
+                with ranking_session() as uow:
+                    uow.session.execute(update(RankingRun).where(RankingRun.id == run_id).values(
+                        expired_count=expired,
+                    ))
+            except Exception:
+                logging.exception(
+                    "Retention for ranking run %s failed; scored rows are already saved",
+                    run_id,
+                )
+                expired = 0
         logging.info(
             "Finished run %s%s: %d scored, %d expired, %d skipped. Evaluation time: %s",
             run_id, " (dry run; no writes)" if args.dry_run else "",

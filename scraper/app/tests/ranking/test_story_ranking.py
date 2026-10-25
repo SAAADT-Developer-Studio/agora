@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.dml import Insert, Update
 
 from app.ranking.contracts import RankingConfig
 from app.ranking.job import score_story
@@ -87,33 +88,35 @@ def test_save_inserts_story_rank_and_leaves_the_story_unchanged(monkeypatch):
     story = stored_story()
     article = story.memberships[0].article
     before = (story.title, story.merged_into_story_id, article.title, article.llm_rank)
-    added = []
-    updates = []
+    executed = []
 
     class Session:
-        def add(self, obj):
-            added.append(obj)
-
         def execute(self, statement, params=None):
-            updates.append(statement)
+            executed.append(statement)
+            return SimpleNamespace(rowcount=1)
 
     monkeypatch.setattr("app.ranking.persistence.object_session", lambda obj: Session())
     config = resolve_ranking_config(RankingConfig(version="initial-ranking-v1"))
     explanation = rank_and_save_story(story, NOW, config, ranking_run_id=7)
-    assert len(added) == 1
-    assert len(updates) == 1
-    assert updates[0].table.name == "story_rank"
-    bound = next(iter(updates[0]._values.values()))
+    slim = next(statement for statement in executed if isinstance(statement, Update))
+    inserted = next(statement for statement in executed if isinstance(statement, Insert))
+    assert slim.table.name == "story_rank"
+    slim_sql = str(slim.compile(dialect=postgresql.dialect())).lower()
+    assert "order by story_rank.ranking_run_id desc" in slim_sql
+    assert "limit" in slim_sql
+    assert "(rank_components ->> 'retained') is distinct from 'score'" in slim_sql
+    bound = next(iter(slim._values.values()))
     assert (bound.value if hasattr(bound, "value") else bound) == SCORE_ONLY_COMPONENTS
-    row = added[0]
-    assert isinstance(row, StoryRank)
-    assert (row.ranking_run_id, row.story_id) == (7, story.id)
-    assert row.score == explanation.result.score
-    assert 0 < row.score <= 1
-    assert row.rank_category == "sport"
-    assert row.rank_version == explanation.algorithm_version
-    assert "coverage_score" in row.rank_components
-    assert "explanation" not in row.rank_components
+    insert_sql = str(inserted.compile(dialect=postgresql.dialect())).lower()
+    assert "on conflict (ranking_run_id, story_id) do nothing" in insert_sql
+    params = inserted.compile().params
+    assert (params["ranking_run_id"], params["story_id"]) == (7, story.id)
+    assert params["score"] == explanation.result.score
+    assert 0 < params["score"] <= 1
+    assert params["rank_category"] == "sport"
+    assert params["rank_version"] == explanation.algorithm_version
+    assert "coverage_score" in params["rank_components"]
+    assert "explanation" not in params["rank_components"]
     assert before == (story.title, story.merged_into_story_id, article.title, article.llm_rank)
     assert not hasattr(story, "rank_score")
 
@@ -140,13 +143,15 @@ def test_story_batch_query_reads_stories_only():
     assert "last_article_published_at" in sql
     assert "merged_into_story_id is null" in sql
     assert "story_article" in sql
-    assert "order by story.last_article_published_at, story.id" in sql
-    assert "story.id >" not in sql
+    assert "order by story.id" in sql
+    assert "story.id >" in sql
     paged = story_ranking_statement(
-        since=NOW - timedelta(days=14), after_published_at=NOW, after_id=4, limit=25,
+        since=NOW - timedelta(days=14), after_id=4, limit=25, ranking_run_id=9,
     )
     paged_sql = str(paged.compile(dialect=postgresql.dialect())).lower()
-    assert "(story.last_article_published_at, story.id) >" in paged_sql
+    assert "story.id >" in paged_sql
+    assert "story_rank.ranking_run_id" in paged_sql
+    assert "last_article_published_at, story.id" not in paged_sql
 
 
 class _Session:
@@ -172,6 +177,18 @@ class _Session:
         for table in ("cluster_v2", "article_cluster", "cluster_run"):
             assert table not in lowered, sql
         table = getattr(statement, "table", None)
+        if getattr(table, "name", None) == "story_rank" and isinstance(statement, Insert):
+            params = statement.compile().params
+            self.added.append(StoryRank(
+                ranking_run_id=params["ranking_run_id"],
+                story_id=params["story_id"],
+                score=params["score"],
+                ranked_at=params["ranked_at"],
+                rank_version=params["rank_version"],
+                rank_components=params["rank_components"],
+                rank_category=params.get("rank_category"),
+            ))
+            return SimpleNamespace(rowcount=1)
         values = getattr(statement, "_values", None)
         if getattr(table, "name", None) != "ranking_run" or not isinstance(values, dict):
             return SimpleNamespace(rowcount=0)
@@ -203,9 +220,9 @@ def _patch_run(monkeypatch, session, pages):
     def ranking_session():
         yield SimpleNamespace(session=session)
 
-    def load_story_batch(db_session, *, since, after_published_at, after_id, limit):
+    def load_story_batch(db_session, *, since, after_id, limit, ranking_run_id=None):
         assert db_session is session
-        calls.append((since, after_published_at, after_id, limit))
+        calls.append((since, after_id, limit, ranking_run_id))
         return pages.pop(0)
 
     monkeypatch.setattr(rank_clusters, "ranking_session", ranking_session)
@@ -225,6 +242,9 @@ def test_ranking_run_scores_stories_without_reading_clusters(monkeypatch, caplog
     with caplog.at_level(logging.INFO):
         rank_clusters.main([])
     assert "Finished run 1: 2 scored, 0 expired, 3 skipped." in caplog.text
+    progress = [record.message for record in caplog.records if record.message.startswith("Run ")]
+    assert progress
+    assert all("expired" not in message for message in progress)
     runs = [obj for obj in session.added if isinstance(obj, RankingRun)]
     rows = [obj for obj in session.added if isinstance(obj, StoryRank)]
     assert len(runs) == 1
@@ -239,10 +259,10 @@ def test_ranking_run_scores_stories_without_reading_clusters(monkeypatch, caplog
     assert all(row.ranking_run_id == run.id for row in rows)
     assert unknown.memberships[0].story_similarity is None
     assert rows[[row.story_id for row in rows].index(2)].rank_components["coverage_score"] >= 0
-    assert calls[0][1] is None
-    assert calls[0][2] == 0
-    assert calls[1][1] == broken.last_article_published_at
-    assert calls[1][2] == broken.id
+    assert calls[0][1] == 0
+    assert calls[0][3] == run.id
+    assert calls[1][1] == broken.id
+    assert calls[1][3] == run.id
     window = calls[0][0]
     assert window == run.evaluated_at - timedelta(days=14)
     joined = "\n".join(session.sql).lower()

@@ -193,15 +193,21 @@ class RankingRun(Base):
     )
 
 
+# story_rank rows that still store a component summary. The slim's WHERE must
+# use this exact text: a bind in its place makes the planner ignore the
+# partial index and read every observation for the story.
+STORY_RANK_UNRETAINED = "(rank_components ->> 'retained') IS DISTINCT FROM 'score'"
+
+
 class StoryRank(Base):
     """Observation-only score for one story in one ranking run.
 
     Keyed by the run and the story so a later run appends a new row. Nothing
     in the feed, the clusterer, or the story row reads this table. The latest
-    row for a story keeps the component summary; older rows for that story keep
-    the score and store ``{"retained": "score"}``. Rows older than the
-    retention window are deleted by the ranking job, which also removes the
-    finished ``source='story'`` runs those rows belonged to.
+    row for a story keeps the component summary. The save reduces only the
+    previous row for that story to ``{"retained": "score"}``. Rows older than
+    the retention window are deleted by the ranking job, which also removes
+    the finished ``source='story'`` runs those rows belonged to.
     """
 
     __tablename__ = "story_rank"
@@ -226,6 +232,14 @@ class StoryRank(Base):
         CheckConstraint("score BETWEEN 0 AND 1", name="ck_story_rank_score"),
         Index("ix_story_rank_story_id", "story_id"),
         Index("ix_story_rank_ranked_at", "ranked_at"),
+        # Rows still holding a component summary, newest run first. The slim
+        # updates one of these per story; score-only history stays out of it.
+        Index(
+            "ix_story_rank_unretained",
+            "story_id",
+            "ranking_run_id",
+            postgresql_where=text(STORY_RANK_UNRETAINED),
+        ),
     )
 
 

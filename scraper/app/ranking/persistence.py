@@ -5,10 +5,11 @@ from datetime import datetime
 import logging
 from math import isfinite
 
-from sqlalchemy import update
+from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import object_session
 
-from database.schema import ClusterV2, Story, StoryRank
+from database.schema import STORY_RANK_UNRETAINED, ClusterV2, Story, StoryRank
 
 from app.ranking.article_contribution import ArticleContributionConfig
 from app.ranking.cluster_confidence import ClusterConfidenceConfig
@@ -271,20 +272,52 @@ def rank_and_save_cluster(
     return explanation
 
 
+def slim_previous_story_rank(story_id: int, ranking_run_id: int):
+    """Reduce only the previous full observation for this story.
+
+    ``ix_story_rank_unretained`` holds rows that are not the score marker.
+    The predicate is a SQL literal, matching that index, and ``LIMIT 1``
+    stops at the newest earlier run. Older full rows are left for retention.
+    """
+    previous = (
+        select(StoryRank.ranking_run_id)
+        .where(
+            StoryRank.story_id == story_id,
+            StoryRank.ranking_run_id != ranking_run_id,
+            text(STORY_RANK_UNRETAINED),
+        )
+        .order_by(StoryRank.ranking_run_id.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    return (
+        update(StoryRank)
+        .where(StoryRank.story_id == story_id, StoryRank.ranking_run_id == previous)
+        .values(rank_components=SCORE_ONLY_COMPONENTS)
+    )
+
+
+def _affected_rows(result) -> int:
+    count = getattr(result, "rowcount", None)
+    if count is None or count < 0:
+        return 0
+    return count
+
+
 def rank_and_save_story(
     story: Story, evaluated_at: datetime, config: RankingConfig, *, dry_run: bool = False,
     ranking_run_id: int | None = None,
-) -> ClusterRankingExplanation:
+) -> ClusterRankingExplanation | None:
     """Insert one story_rank row. The story and its articles are not modified.
 
     ``dry_run=True`` returns the explanation and writes nothing. A real save
-    requires ``ranking_run_id`` and adds a ``StoryRank`` to the story's
-    session; the caller owns the transaction. The new row keeps the component
-    summary. Earlier rows for the same story are reduced to
-    ``SCORE_ONLY_COMPONENTS`` in that same session, so a rollback drops the
-    insert and the slim together. Score, time, version, and category on those
-    earlier rows stay. Configuration stays on ``ranking_run``. This does not
-    read or write cluster tables, and it does not delete rows.
+    requires ``ranking_run_id``. The new row keeps the component summary.
+    Only the previous full row for this story is reduced to
+    ``SCORE_ONLY_COMPONENTS``, in the same session, so a rollback drops the
+    insert and the slim together. A story already scored in this run inserts
+    nothing (``ON CONFLICT DO NOTHING``) and returns ``None``. Configuration
+    stays on ``ranking_run``. This does not read or write cluster tables, and
+    it does not delete rows.
     """
     config = resolve_ranking_config(config)
     snapshot = prepare_story(story, evaluated_at, config)
@@ -296,26 +329,22 @@ def rank_and_save_story(
     session = object_session(story)
     if session is None:
         raise RuntimeError(f"Story {story.id} is not attached to a session")
-    # Reduce rows that still hold a full summary. After the first slim only
-    # the previous latest row matches, via ix_story_rank_story_id.
-    session.execute(
-        update(StoryRank)
-        .where(
-            StoryRank.story_id == story.id,
-            StoryRank.ranking_run_id != ranking_run_id,
-            StoryRank.rank_components.is_distinct_from(SCORE_ONLY_COMPONENTS),
+    session.execute(slim_previous_story_rank(story.id, ranking_run_id))
+    inserted = session.execute(
+        pg_insert(StoryRank)
+        .values(
+            ranking_run_id=ranking_run_id,
+            story_id=story.id,
+            score=explanation.result.score,
+            ranked_at=explanation.result.evaluated_at,
+            rank_version=explanation.algorithm_version,
+            rank_components=_summary_components(explanation),
+            rank_category=snapshot.category,
         )
-        .values(rank_components=SCORE_ONLY_COMPONENTS)
+        .on_conflict_do_nothing(index_elements=["ranking_run_id", "story_id"])
     )
-    session.add(StoryRank(
-        ranking_run_id=ranking_run_id,
-        story_id=story.id,
-        score=explanation.result.score,
-        ranked_at=explanation.result.evaluated_at,
-        rank_version=explanation.algorithm_version,
-        rank_components=_summary_components(explanation),
-        rank_category=snapshot.category,
-    ))
+    if _affected_rows(inserted) == 0:
+        return None
     return explanation
 
 

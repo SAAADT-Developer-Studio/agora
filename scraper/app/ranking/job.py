@@ -51,11 +51,12 @@ def score_story(
     story, evaluated_at: datetime, config: RankingConfig, *,
     dry_run: bool = False, ranking_run_id: int | None = None,
 ) -> str:
-    """Score one story into story_rank. Return ``scored`` or ``skipped``.
+    """Score one story into story_rank. Return ``scored``, ``duplicate``, or ``skipped``.
 
     Empty and merged stories are skipped. Validation failures are logged and
-    skipped. A database error rolls back only this story's savepoint. The
-    story row itself is not updated.
+    skipped. A story already stored for this run is ``duplicate`` and is not
+    counted as a skip. A database error rolls back only this story's
+    savepoint. The story row itself is not updated.
     """
     session = object_session(story)
 
@@ -66,9 +67,11 @@ def score_story(
         if not story.memberships:
             logging.warning("Skipping empty story %s", story.id)
             return "skipped"
-        persistence.rank_and_save_story(
+        saved = persistence.rank_and_save_story(
             story, evaluated_at, config, dry_run=dry_run, ranking_run_id=ranking_run_id,
         )
+        if saved is None:
+            return "duplicate"
         return "scored"
 
     try:

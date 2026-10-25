@@ -879,66 +879,256 @@ def test_retention_deletes_old_story_observations_only(db_engine, monkeypatch):
         assert set(session.scalars(select(Story.id))) == {1, 2, 3}
 
 
-def _explain(session, statement) -> str:
-    compiled = statement.compile(
-        dialect=session.bind.dialect, compile_kwargs={"literal_binds": True},
-    )
-    return "\n".join(session.scalars(text("EXPLAIN " + str(compiled))))
+def test_publication_time_bump_does_not_rescore(db_engine, monkeypatch, caplog):
+    import logging
+    from database import unit_of_work
+    from app.ranking import stories
+    monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
+    now = datetime.now(timezone.utc)
+    bumped = now + timedelta(hours=1)
+    with Session(db_engine) as session:
+        _seed_stories(session, [
+            stored_story(story_id=1, published_at=now - timedelta(hours=2)),
+            stored_story(story_id=2, published_at=now - timedelta(hours=1), article_id=20),
+        ])
+        session.commit()
+    original = stories.load_story_batch
+    calls = {"n": 0}
+
+    def bump_story_already_scored(session, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            session.execute(text(
+                "UPDATE story SET last_article_published_at = :at WHERE id = 1"
+            ), {"at": bumped})
+        return original(session, **kwargs)
+
+    monkeypatch.setattr(stories, "load_story_batch", bump_story_already_scored)
+    with caplog.at_level(logging.ERROR):
+        main(["--batch-size", "1"])
+    assert "Skipping story" not in caplog.text
+    assert "story_rank_pkey" not in caplog.text
+    with Session(db_engine) as session:
+        rows = session.scalars(select(StoryRank).order_by(StoryRank.story_id)).all()
+        assert [row.story_id for row in rows] == [1, 2]
+        run = session.scalars(select(RankingRun)).one()
+        assert run.status == "succeeded"
+        assert (run.scored_count, run.expired_count, run.skipped_count) == (2, 0, 0)
+        assert session.get(Story, 1).title == "Station"
+        assert session.get(Story, 1).last_article_published_at == bumped
 
 
-def test_story_page_uses_publication_index(db_engine):
-    from app.ranking.stories import load_story_batch, story_ranking_statement
-    since = datetime.now(timezone.utc) - timedelta(days=14)
-    old = since - timedelta(days=40)
-    recent = since + timedelta(days=1)
+def test_loader_skips_ids_already_scored_this_run(db_engine):
+    from app.ranking.stories import load_story_batch
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        _seed_stories(session, [
+            stored_story(story_id=1, published_at=now - timedelta(hours=1)),
+            stored_story(story_id=2, published_at=now - timedelta(hours=1), article_id=20),
+        ])
+        run = RankingRun(
+            evaluated_at=now, started_at=now, window_days=14,
+            algorithm_version="v", config={}, source="story", status="running",
+        )
+        session.add(run)
+        session.flush()
+        session.add(StoryRank(
+            ranking_run_id=run.id, story_id=1, score=0.4, ranked_at=now,
+            rank_version="v", rank_components={"coverage_score": 0.4},
+        ))
+        session.commit()
+        run_id = run.id
+        page = load_story_batch(
+            session, since=now - timedelta(days=14), ranking_run_id=run_id, limit=10,
+        )
+        assert [story.id for story in page] == [2]
+        again = load_story_batch(session, since=now - timedelta(days=14), limit=10)
+        assert [story.id for story in again] == [1, 2]
+
+
+def test_repeated_story_is_not_a_skip(db_engine, monkeypatch, caplog):
+    import logging
+    from database import unit_of_work
+    from app.ranking import stories
+    monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        _seed_stories(session, [stored_story(story_id=1, published_at=now - timedelta(hours=1))])
+        session.commit()
+    original = stories.load_story_batch
+    calls = {"n": 0}
+
+    def same_story_twice(session, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 2:
+            return []
+        # Ignore the id cursor and the already-scored filter, as a racy page would.
+        return original(session, since=kwargs["since"], after_id=0, limit=1)
+
+    monkeypatch.setattr(stories, "load_story_batch", same_story_twice)
+    with caplog.at_level(logging.ERROR):
+        main(["--batch-size", "1"])
+    assert "Skipping story" not in caplog.text
+    with Session(db_engine) as session:
+        assert session.scalars(select(StoryRank)).one().story_id == 1
+        run = session.scalars(select(RankingRun)).one()
+        assert run.status == "succeeded"
+        assert (run.scored_count, run.expired_count, run.skipped_count) == (1, 0, 0)
+        assert session.get(Story, 1).title == "Station"
+
+
+def test_slim_touches_only_the_previous_full_row(db_engine):
+    from app.ranking.persistence import rank_and_save_story
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        runs = []
+        for days_ago, components, score in (
+            (3, {"coverage_score": 0.2}, 0.2),
+            (2, {"coverage_score": 0.3}, 0.3),
+        ):
+            run = RankingRun(
+                evaluated_at=now - timedelta(days=days_ago),
+                started_at=now - timedelta(days=days_ago),
+                finished_at=now - timedelta(days=days_ago),
+                window_days=14, algorithm_version="v", config={},
+                source="story", status="succeeded",
+            )
+            session.add(run)
+            session.flush()
+            session.add(StoryRank(
+                ranking_run_id=run.id, story_id=1, score=score,
+                ranked_at=now - timedelta(days=days_ago),
+                rank_version="v", rank_components=components,
+            ))
+            runs.append(run)
+        current = RankingRun(
+            evaluated_at=now, started_at=now, window_days=14,
+            algorithm_version="v", config={}, source="story",
+        )
+        session.add(current)
+        session.commit()
+        oldest_id, previous_id, current_id = runs[0].id, runs[1].id, current.id
+    with Session(db_engine) as session:
+        story = session.get(Story, 1)
+        saved = rank_and_save_story(
+            story, now, RankingConfig(version="initial-ranking-v1"), ranking_run_id=current_id,
+        )
+        assert saved is not None
+        session.commit()
+    with Session(db_engine) as session:
+        oldest = session.get(StoryRank, (oldest_id, 1))
+        previous = session.get(StoryRank, (previous_id, 1))
+        fresh = session.get(StoryRank, (current_id, 1))
+        assert oldest.rank_components == {"coverage_score": 0.2}
+        assert oldest.score == 0.2
+        assert previous.rank_components == SCORE_ONLY_COMPONENTS
+        assert previous.score == 0.3
+        assert "coverage_score" in fresh.rank_components
+        assert session.get(Story, 1).title == "Station"
+
+
+def test_unretained_index_serves_the_slim(db_engine):
+    from app.ranking.persistence import slim_previous_story_rank
+    from database.schema import STORY_RANK_UNRETAINED
+    now = datetime.now(timezone.utc)
     with db_engine.begin() as connection:
         connection.execute(text(
-            "INSERT INTO news_provider (key, name, url, rank) "
-            "VALUES ('p', 'P', 'https://p.test', 0)"
-        ))
-        connection.execute(text(
             "INSERT INTO story (id, title, last_article_published_at, created_at) "
-            "SELECT g, 'old', :old, :old FROM generate_series(1, 20000) AS g"
-        ), {"old": old})
+            "VALUES (1, 'Station', :at, :at)"
+        ), {"at": now})
         connection.execute(text(
-            "INSERT INTO story (id, title, last_article_published_at, created_at) "
-            "SELECT 20000 + g, 'new', :recent, :recent FROM generate_series(1, 40) AS g"
-        ), {"recent": recent})
+            "INSERT INTO ranking_run "
+            "(id, evaluated_at, window_days, algorithm_version, config, started_at, status, source) "
+            "SELECT g, :at, 14, 'v', '{}'::jsonb, :at, 'succeeded', 'story' "
+            "FROM generate_series(1, 4000) AS g"
+        ), {"at": now})
         connection.execute(text(
-            "INSERT INTO story (id, title, last_article_published_at, created_at, merged_into_story_id) "
-            "VALUES (20041, 'merged', :recent, :recent, 20001), "
-            "(20042, 'empty', :recent, :recent, NULL)"
-        ), {"recent": recent})
+            "INSERT INTO story_rank "
+            "(ranking_run_id, story_id, score, ranked_at, rank_version, rank_components) "
+            "SELECT g, 1, 0.4, :at, 'v', '{\"retained\": \"score\"}'::jsonb "
+            "FROM generate_series(1, 3990) AS g"
+        ), {"at": now})
         connection.execute(text(
-            "INSERT INTO article (id, url, title, published_at, embedding, news_provider_key) "
-            "SELECT g, 'https://p.test/' || g, 't', :at, ARRAY[1.0]::double precision[], 'p' "
-            "FROM generate_series(1, 20041) AS g"
-        ), {"at": recent})
-        connection.execute(text(
-            "INSERT INTO story_article (story_id, article_id, method, assigned_at) "
-            "SELECT g, g, 'cosine', :at FROM generate_series(1, 20041) AS g"
-        ), {"at": recent})
-        connection.execute(text("ANALYZE story"))
-        connection.execute(text("ANALYZE story_article"))
+            "INSERT INTO story_rank "
+            "(ranking_run_id, story_id, score, ranked_at, rank_version, rank_components) "
+            "SELECT g, 1, 0.5, :at, 'v', '{\"coverage_score\": 0.5}'::jsonb "
+            "FROM generate_series(3991, 4000) AS g"
+        ), {"at": now})
+        connection.execute(text("ANALYZE story_rank"))
     with Session(db_engine) as session:
-        plan = _explain(session, story_ranking_statement(since=since, limit=10))
-        assert "ix_story_last_article_published_at" in plan, plan
-        assert "story_pkey" not in plan, plan
-        collected = []
-        cursor_at = None
-        cursor_id = 0
-        while True:
-            page = load_story_batch(
-                session, since=since, after_published_at=cursor_at, after_id=cursor_id, limit=7,
-            )
-            if not page:
-                break
-            collected.extend(story.id for story in page)
-            cursor_at = page[-1].last_article_published_at
-            cursor_id = page[-1].id
-        assert collected == list(range(20001, 20041))
-        paged = _explain(session, story_ranking_statement(
-            since=since, after_published_at=cursor_at, after_id=20001, limit=10,
+        compiled = str(slim_previous_story_rank(1, 4001).compile(dialect=session.bind.dialect))
+        assert STORY_RANK_UNRETAINED in compiled
+        assert "ORDER BY story_rank.ranking_run_id DESC" in compiled
+        assert "LIMIT" in compiled
+        # Same predicate and limit as the statement above. literal_binds cannot
+        # render the jsonb assignment, so the probe is this SELECT.
+        plan = "\n".join(session.scalars(text(
+            "EXPLAIN SELECT ranking_run_id FROM story_rank "
+            "WHERE story_id = 1 AND ranking_run_id <> 4001 AND "
+            + STORY_RANK_UNRETAINED
+            + " ORDER BY ranking_run_id DESC LIMIT 1"
+        )))
+        assert "ix_story_rank_unretained" in plan, plan
+        assert "Limit" in plan
+
+
+def test_retention_failure_leaves_the_scored_run_succeeded(db_engine, monkeypatch, caplog):
+    import logging
+    from database import unit_of_work
+    from scripts import rank_clusters
+    monkeypatch.setattr(unit_of_work, "SessionMaker", sessionmaker(db_engine))
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.commit()
+
+    def boom(cutoff, *, guard):
+        raise RuntimeError("retention down")
+
+    monkeypatch.setattr(rank_clusters, "retain_story_observations", boom)
+    with caplog.at_level(logging.ERROR):
+        main([])
+    assert "scored rows are already saved" in caplog.text
+    with Session(db_engine) as session:
+        run = session.scalars(select(RankingRun)).one()
+        assert run.status == "succeeded"
+        assert run.source == "story"
+        assert (run.scored_count, run.expired_count, run.skipped_count) == (1, 0, 0)
+        assert session.scalars(select(StoryRank)).one().story_id == 1
+        assert session.get(Story, 1).title == "Station"
+
+
+def test_unretained_index_migration_keeps_rows(db_engine):
+    now = datetime.now(timezone.utc)
+    with Session(db_engine) as session:
+        run = RankingRun(
+            evaluated_at=now, started_at=now, window_days=14,
+            algorithm_version="v", config={}, source="story", status="succeeded",
+        )
+        session.add(run)
+        _seed_stories(session, [stored_story(published_at=now - timedelta(hours=1))])
+        session.flush()
+        session.add(StoryRank(
+            ranking_run_id=run.id, story_id=1, score=0.5, ranked_at=now,
+            rank_version="v", rank_components={"coverage_score": 0.5},
         ))
-        assert "ix_story_last_article_published_at" in paged, paged
-        assert "story_pkey" not in paged, paged
+        session.commit()
+        run_id = run.id
+    path = Path(schema.__file__).parent / "alembic/versions/e4b7c2a81d06_index_unretained_story_rank.py"
+    spec = importlib.util.spec_from_file_location("unretained_story_rank_index", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    with db_engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            assert connection.scalar(text("SELECT to_regclass('ix_story_rank_unretained')")) is not None
+            migration.downgrade()
+            assert connection.scalar(text("SELECT to_regclass('ix_story_rank_unretained')")) is None
+            assert connection.scalar(text(
+                "SELECT rank_components->>'coverage_score' FROM story_rank WHERE story_id = 1"
+            )) == "0.5"
+            migration.upgrade()
+            assert connection.scalar(text("SELECT to_regclass('ix_story_rank_unretained')")) is not None
+    with Session(db_engine) as session:
+        assert session.get(StoryRank, (run_id, 1)).score == 0.5
+        assert session.get(Story, 1).title == "Station"
