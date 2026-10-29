@@ -134,17 +134,13 @@ def test_image_extraction_errors_log_exception_type_and_repr(caplog):
         article = provider.parse_rss_feed_entry(
             {"title": "Naslov", "link": "https://example.com/story"}
         )
-        # readability may not produce a deck for this fragment; the image-error
-        # log is emitted before ExtractedArticle is built.
-        try:
-            provider.extract_article_from_html(
-                "<html><head><title>Naslov</title></head><body>Besedilo</body></html>",
-                "https://example.com/story",
-            )
-        except Exception:
-            pass
+        extracted = provider.extract_article_from_html(
+            "<html><head><title>Naslov</title></head><body>Besedilo</body></html>",
+            "https://example.com/story",
+        )
 
     assert article.image_urls == []
+    assert extracted.image_urls == []
     messages = [record.getMessage() for record in caplog.records]
     assert any("Error extracting image URLs for Example" in message for message in messages)
     assert any(
@@ -153,6 +149,21 @@ def test_image_extraction_errors_log_exception_type_and_repr(caplog):
     for message in messages:
         assert "RuntimeError" in message
         assert "RuntimeError('')" in message
+
+
+def test_extract_article_allows_missing_deck():
+    # readability returns excerpt=None for pages like sta.si, which used to
+    # reject the whole article because deck was required.
+    provider = _provider()
+
+    extracted = provider.extract_article_from_html(
+        "<html><head><title>Naslov</title></head><body>Besedilo</body></html>",
+        "https://www.sta.si/123",
+    )
+
+    assert extracted.deck is None
+    assert extracted.title
+    assert extracted.url == "https://www.sta.si/123"
 
 
 def test_primorske_feed_uses_current_site():

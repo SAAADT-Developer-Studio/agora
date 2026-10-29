@@ -44,7 +44,10 @@ class ExtractedArticle(BaseModel):
     url: str = Field(description="URL of the article")
     title: str = Field(description="Title of the article")
     author: str | None = Field(description="Author of the article", default=None)
-    deck: str = Field(description="Deck of the article, a summary or brief description")
+    deck: str | None = Field(
+        description="Deck of the article, a summary or brief description",
+        default=None,
+    )
     content: str = Field(description="Full content of the article")
     published_at: str | None = Field(
         description="Date when the article was published", default=None
