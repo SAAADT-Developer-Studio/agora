@@ -65,7 +65,11 @@ async def analyze_articles(
             f"{content}"
         )
         inputs.append(prompt)
-    results = await model.abatch(inputs=inputs, return_exceptions=True)
+    results = await model.abatch(
+        inputs=inputs,
+        config={"max_concurrency": 4},
+        return_exceptions=True,
+    )
     log_llm_exceptions(
         "Article analysis failed",
         [r for r in results if isinstance(r, BaseException)],
