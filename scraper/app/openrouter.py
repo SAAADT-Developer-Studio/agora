@@ -1,10 +1,10 @@
 import logging
 from functools import wraps
-from typing import Any
+from typing import Any, override
 
 import openai
 from langchain.chat_models import init_chat_model
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.runnables.retry import RunnableRetry
 from openai import APIStatusError
 
@@ -13,13 +13,15 @@ from app import config
 
 DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash"
 
-# Connection and timeout errors are the burst failures. RateLimitError is also
-# retried here; if those attempts are exhausted it still falls through to the
-# APIStatusError fallback because it is a subclass.
+# max_retries=0 disables the SDK retry loop, including its 5xx retries, so
+# InternalServerError is listed here. Rate-limit and 5xx errors are
+# APIStatusError subclasses: once these attempts are exhausted they still
+# fall through to the fallback key. Connection errors are not.
 _RETRY_EXCEPTIONS = (
     openai.APIConnectionError,
     openai.APITimeoutError,
     openai.RateLimitError,
+    openai.InternalServerError,
 )
 
 
@@ -45,6 +47,44 @@ class _DelegatingRetry(RunnableRetry):
             return _with_connection_retry(attr(*args, **kwargs))
 
         return with_structured_output
+
+    @override
+    def batch(
+        self,
+        inputs: list[Any],
+        config: RunnableConfig | list[RunnableConfig] | None = None,
+        *,
+        return_exceptions: bool = False,
+        **kwargs: Any,
+    ) -> list[Any]:
+        # RunnableRetry.batch retries the whole batch, then zips leftover
+        # exceptions back by position. One late success shifts later results,
+        # and a retryable error also re-runs inputs that already failed parsing.
+        # Runnable.batch calls invoke per input, so each item retries on its own.
+        return Runnable.batch(
+            self,
+            inputs,
+            config,
+            return_exceptions=return_exceptions,
+            **kwargs,
+        )
+
+    @override
+    async def abatch(
+        self,
+        inputs: list[Any],
+        config: RunnableConfig | list[RunnableConfig] | None = None,
+        *,
+        return_exceptions: bool = False,
+        **kwargs: Any,
+    ) -> list[Any]:
+        return await Runnable.abatch(
+            self,
+            inputs,
+            config,
+            return_exceptions=return_exceptions,
+            **kwargs,
+        )
 
 
 def _with_connection_retry(model: Runnable) -> _DelegatingRetry:
