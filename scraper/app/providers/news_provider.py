@@ -10,6 +10,22 @@ from readability import parse
 import app.config as config
 
 
+# Cloudflare rejects the scraper's old Chrome/91 user agent. Keep this aligned
+# with current desktop Chrome.
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Accept-Language": "sl-SI,sl;q=0.9,en;q=0.8",
+}
+
+
 @dataclass
 class ArticleMetadata:
     """Metadata for an article."""
@@ -28,7 +44,10 @@ class ExtractedArticle(BaseModel):
     url: str = Field(description="URL of the article")
     title: str = Field(description="Title of the article")
     author: str | None = Field(description="Author of the article", default=None)
-    deck: str = Field(description="Deck of the article, a summary or brief description")
+    deck: str | None = Field(
+        description="Deck of the article, a summary or brief description",
+        default=None,
+    )
     content: str = Field(description="Full content of the article")
     published_at: str | None = Field(
         description="Date when the article was published", default=None
@@ -66,18 +85,20 @@ class NewsProvider(ABC):
                 try:
                     articles.extend(await self.fetch_rss_feed(client, feed_url))
                 except Exception as e:
-                    logging.error(f"Error fetching RSS feed {feed_url}: {e}")
+                    logging.error(
+                        f"Error fetching RSS feed {feed_url}: {type(e).__name__}: {e!r}"
+                    )
         return articles
 
     async def fetch_rss_feed(
         self, client: httpx.AsyncClient, feed_url: str
     ) -> list[ArticleMetadata]:
         client.follow_redirects = True
-        client.headers["User-Agent"] = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        response = await client.get(
+            feed_url,
+            headers=DEFAULT_HEADERS,
+            timeout=httpx.Timeout(20, connect=10),
         )
-        response = await client.get(feed_url)
         response.raise_for_status()
         feed = feedparser.parse(response.text)
 
@@ -95,7 +116,9 @@ class NewsProvider(ABC):
         try:
             image_urls = self.parse_rss_entry_image_urls(entry)
         except Exception as e:
-            logging.error(f"Error extracting image URLs for {self.name}: {e}")
+            logging.error(
+                f"Error extracting image URLs for {self.name}: {type(e).__name__}: {e!r}"
+            )
 
         return ArticleMetadata(
             title=entry["title"],
@@ -117,12 +140,11 @@ class NewsProvider(ABC):
     async def fetch_article_html(self, url: str) -> str:
         async with httpx.AsyncClient() as client:
             client.follow_redirects = True
-            # set user agent to avoid cloudflare blocking user agent
-            client.headers["User-Agent"] = (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+            response = await client.get(
+                url,
+                headers=DEFAULT_HEADERS,
+                timeout=httpx.Timeout(20, connect=10),
             )
-
-            response = await client.get(url)
             response.raise_for_status()
             return response.text
 
@@ -133,7 +155,9 @@ class NewsProvider(ABC):
         try:
             image_urls = self.extract_image_urls_from_html(html)
         except Exception as e:
-            logging.error(f"Error extracting image URLs from article HTML: {e}")
+            logging.error(
+                f"Error extracting image URLs from article HTML: {type(e).__name__}: {e!r}"
+            )
 
         return ExtractedArticle(
             title=doc.title,

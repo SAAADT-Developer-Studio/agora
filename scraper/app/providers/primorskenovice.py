@@ -9,7 +9,7 @@ class PrimorskeNoviceProvider(NewsProvider):
         super().__init__(
             key=ProviderKey.PRIMORSKENOVICE.value,
             name="Primorske Novice",
-            url="https://primorske.svet24.si",
-            rss_feeds=["https://primorske.svet24.si/rss.xml"],
+            url="https://primorske.si",
+            rss_feeds=["https://primorske.si/rss.xml"],
             bias_rating=BiasRating.CENTER_LEFT.value,
         )
