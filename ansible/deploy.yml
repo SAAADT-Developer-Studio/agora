@@ -95,7 +95,8 @@
           [Service]
           Type=oneshot
           WorkingDirectory={{ project_dir }}
-          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 14
+          # ranking.yaml is baked into the image. A missing or invalid file fails this oneshot.
+          ExecStart=/usr/bin/docker compose run --rm --no-deps -T --name agora-ranking scraper timeout --signal=TERM --kill-after=30s 25m python3 -u -m scripts.rank_clusters --days 14 --config /app/scraper/config/ranking.yaml
           ExecStopPost=-/usr/bin/docker rm -f agora-ranking
           TimeoutStartSec=27min
           TimeoutStopSec=45s

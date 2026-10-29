@@ -8,6 +8,10 @@ Full component summaries are kept only on the latest row per story. After
 scoring, the run deletes ``story_rank`` rows older than the retention window
 and finished ``source='story'`` runs that no longer have any. Cluster rows,
 story rows, and ``source='cluster'`` ranking runs are left in place.
+
+Settings come from ``scraper/config/ranking.yaml`` unless ``--config`` points
+at another YAML or JSON file. A missing or invalid file exits non-zero and
+is logged. The job does not fall back to the Python field defaults.
 """
 
 import argparse
@@ -277,23 +281,33 @@ def main(argv: list[str] | None = None) -> None:
         help="Score stories whose latest article was published within this many days (default: 14)",
     )
     parser.add_argument("--batch-size", type=positive_int, default=100, help="Stories per transaction (default: 100)")
-    parser.add_argument("--config", type=Path, help="JSON RankingConfig with version and parameters")
+    parser.add_argument(
+        "--config", type=Path, default=None,
+        help=(
+            "YAML or JSON {version, parameters} file "
+            "(default: scraper/config/ranking.yaml). "
+            "A missing or invalid file fails the run; code defaults are not used."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Preview scores without any database writes")
     args = parser.parse_args(argv)
 
     # --help requires neither a database URL nor any LLM/API credentials.
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
-    from app.ranking.contracts import RankingConfig
-    from app.ranking.persistence import (
-        DEFAULT_CONFIG_VERSION, resolve_ranking_config,
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    from app.ranking.config_file import (
+        RankingConfigFileError, load_ranking_config_file, packaged_ranking_config_path,
     )
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    config = resolve_ranking_config(
-        RankingConfig.model_validate_json(args.config.read_text()) if args.config
-        else RankingConfig(version=DEFAULT_CONFIG_VERSION)
-    )
+    config_path = args.config if args.config is not None else packaged_ranking_config_path()
+    args.config = config_path
+    try:
+        config = load_ranking_config_file(config_path)
+    except RankingConfigFileError as exc:
+        logging.error("%s", exc)
+        raise SystemExit(1) from exc
+    logging.info("Loaded ranking config %s version %s", config_path, config.version)
     run_ranking(args, config)
 
 

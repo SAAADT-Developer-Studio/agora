@@ -1,0 +1,567 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ranking.schema.json",
+  "title": "RankingConfig",
+  "description": "Story ranking settings. The file in git is scraper/config/ranking.yaml. See scraper/config/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "parameters"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Label stored on ranking_run.config. The current production value is initial-ranking-v1."
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Fixed section names. Unknown sections are rejected. Omitted sections and keys are filled from the Python models when a valid file is loaded. Write every parameter explicitly.",
+      "properties": {
+        "article_contribution": {
+          "additionalProperties": false,
+          "description": "Defaults are initial policy choices, not empirically calibrated weights.",
+          "properties": {
+            "authority_weight": {
+              "default": 0.25,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Authority Weight",
+              "type": "number"
+            },
+            "originality_weight": {
+              "default": 0.2,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Originality Weight",
+              "type": "number"
+            },
+            "novelty_weight": {
+              "default": 0.3,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Novelty Weight",
+              "type": "number"
+            },
+            "quality_weight": {
+              "default": 0.15,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Quality Weight",
+              "type": "number"
+            },
+            "source_weight": {
+              "default": 0.1,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Source Weight",
+              "type": "number"
+            },
+            "freshness_half_life_hours": {
+              "default": 24.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Freshness Half Life Hours",
+              "type": "number"
+            },
+            "publisher_repeat_decay": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Publisher Repeat Decay",
+              "type": "number"
+            },
+            "normalization_scale": {
+              "default": 3.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Normalization Scale",
+              "type": "number"
+            },
+            "unknown_authority": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Authority",
+              "type": "number"
+            },
+            "unknown_originality": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Originality",
+              "type": "number"
+            },
+            "unknown_novelty": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Novelty",
+              "type": "number"
+            },
+            "unknown_source_credit": {
+              "default": 0.25,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Source Credit",
+              "type": "number"
+            },
+            "unknown_syndication_multiplier": {
+              "default": 0.85,
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Unknown Syndication Multiplier",
+              "type": "number"
+            },
+            "syndication_multiplier": {
+              "default": 0.35,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Syndication Multiplier",
+              "type": "number"
+            },
+            "syndicated_originality_cap": {
+              "default": 0.15,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Syndicated Originality Cap",
+              "type": "number"
+            },
+            "family_distribution_credit": {
+              "default": 0.15,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Family Distribution Credit",
+              "type": "number"
+            },
+            "family_distribution_decay": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Family Distribution Decay",
+              "type": "number"
+            },
+            "breaking_credit": {
+              "default": 0.75,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Breaking Credit",
+              "type": "number"
+            },
+            "semantic_novelty_weight": {
+              "default": 0.7,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Semantic Novelty Weight",
+              "type": "number"
+            },
+            "novelty_similarity_floor": {
+              "default": 0.7,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Novelty Similarity Floor",
+              "type": "number"
+            },
+            "redundancy_similarity": {
+              "default": 0.98,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Redundancy Similarity",
+              "type": "number"
+            },
+            "minimum_text_tokens": {
+              "default": 12,
+              "minimum": 5,
+              "title": "Minimum Text Tokens",
+              "type": "integer"
+            },
+            "full_content_tokens": {
+              "default": 200,
+              "minimum": 1,
+              "title": "Full Content Tokens",
+              "type": "integer"
+            },
+            "full_summary_tokens": {
+              "default": 40,
+              "minimum": 1,
+              "title": "Full Summary Tokens",
+              "type": "integer"
+            }
+          },
+          "title": "ArticleContributionConfig",
+          "type": "object"
+        },
+        "syndication": {
+          "additionalProperties": false,
+          "description": "Conservative initial thresholds for comparing extracted article bodies.",
+          "properties": {
+            "minimum_content_tokens": {
+              "default": 50,
+              "minimum": 5,
+              "title": "Minimum Content Tokens",
+              "type": "integer"
+            },
+            "minimum_unique_shingles": {
+              "default": 20,
+              "minimum": 1,
+              "title": "Minimum Unique Shingles",
+              "type": "integer"
+            },
+            "similarity_threshold": {
+              "default": 0.8,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Similarity Threshold",
+              "type": "number"
+            }
+          },
+          "title": "SyndicationConfig",
+          "type": "object"
+        },
+        "coverage": {
+          "additionalProperties": false,
+          "description": "Initial policy choices; weights represent fractions of one publisher.",
+          "properties": {
+            "normalization_scale": {
+              "default": 5.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Normalization Scale",
+              "type": "number"
+            },
+            "unknown_publisher_weight": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Publisher Weight",
+              "type": "number"
+            },
+            "syndicated_publisher_weight": {
+              "default": 0.15,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Syndicated Publisher Weight",
+              "type": "number"
+            },
+            "family_distribution_credit": {
+              "default": 0.15,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Family Distribution Credit",
+              "type": "number"
+            },
+            "family_distribution_decay": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Family Distribution Decay",
+              "type": "number"
+            }
+          },
+          "title": "CoverageConfig",
+          "type": "object"
+        },
+        "publisher_authority": {
+          "additionalProperties": false,
+          "properties": {
+            "unknown_authority": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Authority",
+              "type": "number"
+            }
+          },
+          "title": "PublisherAuthorityConfig",
+          "type": "object"
+        },
+        "freshness": {
+          "additionalProperties": false,
+          "description": "Initial decay and novelty policy; categories don't receive importance weights.",
+          "properties": {
+            "default_half_life_hours": {
+              "default": 24.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Default Half Life Hours",
+              "type": "number"
+            },
+            "category_half_lives_hours": {
+              "additionalProperties": {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              "title": "Category Half Lives Hours",
+              "type": "object"
+            },
+            "minimum_novelty": {
+              "default": 0.5,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Minimum Novelty",
+              "type": "number"
+            },
+            "minimum_new_text_fraction": {
+              "default": 0.2,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Minimum New Text Fraction",
+              "type": "number"
+            }
+          },
+          "title": "FreshnessConfig",
+          "type": "object"
+        },
+        "momentum": {
+          "additionalProperties": false,
+          "description": "Initial policy for coverage rates, publisher limits, and trend sensitivity.",
+          "properties": {
+            "window_hours": {
+              "default": 6.0,
+              "maximum": 8760.0,
+              "minimum": 0.0002777777777777778,
+              "title": "Window Hours",
+              "type": "number"
+            },
+            "new_publisher_weight": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "New Publisher Weight",
+              "type": "number"
+            },
+            "publisher_repeat_credit": {
+              "default": 0.15,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Publisher Repeat Credit",
+              "type": "number"
+            },
+            "publisher_repeat_decay": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Publisher Repeat Decay",
+              "type": "number"
+            },
+            "minimum_novelty": {
+              "default": 0.5,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Minimum Novelty",
+              "type": "number"
+            },
+            "minimum_new_text_fraction": {
+              "default": 0.2,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Minimum New Text Fraction",
+              "type": "number"
+            },
+            "velocity_scale_per_hour": {
+              "default": 0.5,
+              "exclusiveMinimum": 0.0,
+              "title": "Velocity Scale Per Hour",
+              "type": "number"
+            },
+            "acceleration_weight": {
+              "default": 0.4,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Acceleration Weight",
+              "type": "number"
+            }
+          },
+          "title": "MomentumConfig",
+          "type": "object"
+        },
+        "newsworthiness": {
+          "additionalProperties": false,
+          "description": "Initial policy: strongest report blended with a few distinct reports.",
+          "properties": {
+            "top_reports": {
+              "default": 3,
+              "minimum": 1,
+              "title": "Top Reports",
+              "type": "integer"
+            },
+            "strongest_weight": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Strongest Weight",
+              "type": "number"
+            },
+            "unknown_importance": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Importance",
+              "type": "number"
+            },
+            "cluster_score_weight": {
+              "default": 1.0,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Cluster Score Weight",
+              "type": "number"
+            }
+          },
+          "title": "NewsworthinessConfig",
+          "type": "object"
+        },
+        "cluster_confidence": {
+          "additionalProperties": false,
+          "description": "Initial coherence thresholds; confidence is a multiplier, never a count bonus.",
+          "properties": {
+            "outlier_similarity": {
+              "default": 0.4,
+              "exclusiveMaximum": 1.0,
+              "minimum": -1.0,
+              "title": "Outlier Similarity",
+              "type": "number"
+            },
+            "weak_similarity": {
+              "default": 0.75,
+              "exclusiveMaximum": 1.0,
+              "exclusiveMinimum": -1.0,
+              "title": "Weak Similarity",
+              "type": "number"
+            },
+            "strong_similarity": {
+              "default": 0.9,
+              "exclusiveMinimum": -1.0,
+              "maximum": 1.0,
+              "title": "Strong Similarity",
+              "type": "number"
+            },
+            "outlier_membership": {
+              "default": 0.2,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Outlier Membership",
+              "type": "number"
+            },
+            "weak_membership": {
+              "default": 0.5,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "title": "Weak Membership",
+              "type": "number"
+            },
+            "semantic_weight": {
+              "default": 0.7,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Semantic Weight",
+              "type": "number"
+            },
+            "unknown_similarity_score": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Similarity Score",
+              "type": "number"
+            },
+            "unknown_membership_confidence": {
+              "default": 0.5,
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "title": "Unknown Membership Confidence",
+              "type": "number"
+            },
+            "weak_relation_penalty": {
+              "default": 0.5,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Weak Relation Penalty",
+              "type": "number"
+            },
+            "temporal_half_life_hours": {
+              "default": 72.0,
+              "exclusiveMinimum": 0.0,
+              "title": "Temporal Half Life Hours",
+              "type": "number"
+            },
+            "temporal_penalty": {
+              "default": 0.25,
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Temporal Penalty",
+              "type": "number"
+            },
+            "gate_power": {
+              "default": 1.0,
+              "minimum": 1.0,
+              "title": "Gate Power",
+              "type": "number"
+            }
+          },
+          "title": "ClusterConfidenceConfig",
+          "type": "object"
+        },
+        "ranking": {
+          "$defs": {
+            "ArticleStrengthConfig": {
+              "additionalProperties": false,
+              "description": "Intrinsic contribution factors for composition; no age or volume terms.",
+              "properties": {
+                "authority_weight": {
+                  "default": 0.5,
+                  "minimum": 0.0,
+                  "title": "Authority Weight",
+                  "type": "number"
+                },
+                "data_quality_weight": {
+                  "default": 0.3,
+                  "minimum": 0.0,
+                  "title": "Data Quality Weight",
+                  "type": "number"
+                },
+                "source_weight": {
+                  "default": 0.2,
+                  "minimum": 0.0,
+                  "title": "Source Weight",
+                  "type": "number"
+                }
+              },
+              "title": "ArticleStrengthConfig",
+              "type": "object"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Equal initial base weights; calibration can change config without changing the engine.",
+          "properties": {
+            "article_contribution_weight": {
+              "default": 1.0,
+              "minimum": 0.0,
+              "title": "Article Contribution Weight",
+              "type": "number"
+            },
+            "coverage_weight": {
+              "default": 1.0,
+              "minimum": 0.0,
+              "title": "Coverage Weight",
+              "type": "number"
+            },
+            "momentum_weight": {
+              "default": 1.0,
+              "minimum": 0.0,
+              "title": "Momentum Weight",
+              "type": "number"
+            },
+            "semantic_importance_weight": {
+              "default": 1.0,
+              "minimum": 0.0,
+              "title": "Semantic Importance Weight",
+              "type": "number"
+            },
+            "article_strength": {
+              "$ref": "#/$defs/ArticleStrengthConfig"
+            }
+          },
+          "title": "ClusterRankingConfig",
+          "type": "object"
+        }
+      }
+    }
+  }
+}

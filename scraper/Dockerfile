@@ -16,6 +16,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --package scraper --locked --no-install-project --no-dev
 
 COPY scraper scraper
+# rank_clusters reads this file from the image. The systemd unit passes
+# /app/scraper/config/ranking.yaml. Fail the build when the file is absent.
+RUN test -s scraper/config/ranking.yaml
 RUN touch scraper/README.md
 
 RUN --mount=type=cache,target=/root/.cache/uv \

@@ -1,0 +1,114 @@
+# Story ranking settings for the observation job (scripts.rank_clusters).
+# This file is the source of truth. The job reads it on every run.
+# A missing or invalid file fails the run and is logged.
+# Shape: {version, parameters}. Keep version in sync with the policy.
+# See config/README.md. vidik-backoffice PRs should edit only this file.
+
+version: initial-ranking-v1
+
+parameters:
+  # Per-article contribution weights, caps, and unknown-value fallbacks.
+  article_contribution:
+    authority_weight: 0.25
+    originality_weight: 0.2
+    novelty_weight: 0.3
+    quality_weight: 0.15
+    source_weight: 0.1
+    freshness_half_life_hours: 24.0
+    publisher_repeat_decay: 0.5
+    normalization_scale: 3.0
+    unknown_authority: 0.5
+    unknown_originality: 0.5
+    unknown_novelty: 0.5
+    unknown_source_credit: 0.25
+    unknown_syndication_multiplier: 0.85
+    syndication_multiplier: 0.35
+    syndicated_originality_cap: 0.15
+    family_distribution_credit: 0.15
+    family_distribution_decay: 0.5
+    breaking_credit: 0.75
+    semantic_novelty_weight: 0.7
+    novelty_similarity_floor: 0.7
+    redundancy_similarity: 0.98
+    minimum_text_tokens: 12
+    full_content_tokens: 200
+    full_summary_tokens: 40
+
+  # When two article bodies count as the same piece of writing.
+  syndication:
+    minimum_content_tokens: 50
+    minimum_unique_shingles: 20
+    similarity_threshold: 0.8
+
+  # How much of one publisher each report counts as toward breadth.
+  coverage:
+    normalization_scale: 5.0
+    unknown_publisher_weight: 0.5
+    syndicated_publisher_weight: 0.15
+    family_distribution_credit: 0.15
+    family_distribution_decay: 0.5
+
+  # Fallback used when a publisher has no authority score.
+  publisher_authority:
+    unknown_authority: 0.5
+
+  # Decay half-lives in hours. Category keys are lowercase.
+  # Built-in categories are listed here in full. See README for the merge rule.
+  freshness:
+    default_half_life_hours: 24.0
+    category_half_lives_hours:
+      politika: 24.0
+      gospodarstvo: 36.0
+      kriminal: 12.0
+      sport: 6.0
+      kultura: 72.0
+      zdravje: 48.0
+      okolje: 48.0
+      lokalno: 24.0
+      tehnologija-znanost: 72.0
+    minimum_novelty: 0.5
+    minimum_new_text_fraction: 0.2
+
+  # Rate of new independent coverage across adjacent windows.
+  momentum:
+    window_hours: 6.0
+    new_publisher_weight: 0.5
+    publisher_repeat_credit: 0.15
+    publisher_repeat_decay: 0.5
+    minimum_novelty: 0.5
+    minimum_new_text_fraction: 0.2
+    velocity_scale_per_hour: 0.5
+    acceleration_weight: 0.4
+
+  # Blend of the strongest article importance scores on a story.
+  newsworthiness:
+    top_reports: 3
+    strongest_weight: 0.5
+    unknown_importance: 0.5
+    cluster_score_weight: 1.0
+
+  # Coherence gate. This multiplies the score; it does not add a count bonus.
+  cluster_confidence:
+    outlier_similarity: 0.4
+    weak_similarity: 0.75
+    strong_similarity: 0.9
+    outlier_membership: 0.2
+    weak_membership: 0.5
+    semantic_weight: 0.7
+    unknown_similarity_score: 0.5
+    unknown_membership_confidence: 0.5
+    weak_relation_penalty: 0.5
+    temporal_half_life_hours: 72.0
+    temporal_penalty: 0.25
+    gate_power: 1.0
+
+  # Base-score weights, normalized before freshness and confidence gate them.
+  ranking:
+    article_contribution_weight: 1.0
+    coverage_weight: 1.0
+    momentum_weight: 1.0
+    semantic_importance_weight: 1.0
+    article_strength:
+      authority_weight: 0.5
+      data_quality_weight: 0.3
+      source_weight: 0.2
