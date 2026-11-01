@@ -44,3 +44,6 @@ terraform.rc
 
 # Local state copies left behind by infra/migrate-state.sh
 infra/.local-state-backup/
+
+# Clusterer replay datasets, LLM cache and reports
+clusterer/.replay/

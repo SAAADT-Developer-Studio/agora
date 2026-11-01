@@ -390,6 +390,9 @@ class StorySummary(Base):
     )
     model: Mapped[str] = mapped_column(String)
     prompt_version: Mapped[int] = mapped_column(Integer)
+    # One or two sentences: what happened, where, when (as a date), who, how.
+    # Null on rows written before prompt version 3.
+    lede: Mapped[Optional[str]] = mapped_column(String, default=None)
     # Later: a nullable `framing` JSONB with what left / center / right outlets
     # (news_provider.bias_rating) emphasize. Only worth generating once at least
     # two bias groups each cover the story with a few articles; with today's
@@ -417,6 +420,9 @@ class StoryArticle(Base):
     nearest_article_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("article.id", ondelete="SET NULL"), default=None
     )
+    # What the LLM judge answered (same_event, development, related_topic,
+    # different), when it was asked. Set on seeds too: why it did not join.
+    judge_relation: Mapped[Optional[str]] = mapped_column(String, default=None)
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.now, init=False
     )
