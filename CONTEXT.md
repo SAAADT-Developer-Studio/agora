@@ -5,7 +5,7 @@ News articles grouped by the same real-world happening.
 ## Language
 
 **Story**:
-Articles covering the same news event, with membership that grows as later articles join.
+Articles covering the same news event, with membership that grows as later articles join. A Story takes articles for three days after its first one; later coverage of the same subject starts a new Story.
 _Avoid_: Cluster, topic, event, thread
 
 **Cluster**:

@@ -1,4 +1,8 @@
-"""Story summary step: one LLM call for a headline plus key-point bullets.
+"""Story summary step: one LLM call for a headline, a lede, and key-point bullets.
+
+The lede is the five Ws in a sentence or two: what happened, where, when (as a
+date, never "yesterday"), who, and how. A reader landing on a story days later
+must see when it happened without opening an article.
 
 Each refresh writes a new ``story_summary`` row and copies its title onto
 ``story.title``. Until the first one succeeds, ``story.title`` stays the
@@ -17,24 +21,26 @@ the story has enough coverage on at least two sides. See ``StorySummary``.
 
 import json
 import logging
-import os
-import urllib.error
-import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
-MODEL = "deepseek/deepseek-v4-flash"
+from . import llm
+
+MODEL = llm.MODEL
 # Bump when the prompt or output shape changes, so rows can be compared.
-PROMPT_VERSION = 1
-_TIMEOUT_SECONDS = 30
-# A headline and five short bullets in JSON. Caps a rambling completion.
-_MAX_TOKENS = 800
+PROMPT_VERSION = 3
+# A headline, a lede, and five short bullets in JSON. Caps a rambling completion.
+_MAX_TOKENS = 900
 
 # Membership is added one article at a time, so landing on one of these counts
-# means the story just crossed that size. Past the last threshold, only a new
-# lead article refreshes the summary.
+# means the story just crossed that size. Past the last one, every
+# ``COUNT_STEP`` more articles refresh it too.
 COUNT_THRESHOLDS = frozenset({3, 5, 10, 20, 40})
+COUNT_STEP = 20
+# A summary older than this is refreshed by the next article published after it,
+# so a story that keeps moving never shows day-old facts.
+STALE_AFTER = timedelta(hours=6)
 PROMPT_ARTICLE_LIMIT = 6
 MAX_BULLETS = 5
 _EXCERPT_CHARS = 400
@@ -42,11 +48,13 @@ _MIN_TITLE_CHARS = 8
 _MAX_TITLE_CHARS = 120
 _MIN_BULLET_CHARS = 10
 _MAX_BULLET_CHARS = 300
+_MIN_LEDE_CHARS = 20
+_MAX_LEDE_CHARS = 400
 
 logger = logging.getLogger(__name__)
 _missing_key_logged = False
 
-_RESPONSE_FORMAT = {
+RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
         "name": "story_summary",
@@ -55,6 +63,7 @@ _RESPONSE_FORMAT = {
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
+                "lede": {"type": "string"},
                 "bullets": {
                     "type": "array",
                     "items": {
@@ -69,17 +78,13 @@ _RESPONSE_FORMAT = {
                     },
                 },
             },
-            "required": ["title", "bullets"],
+            "required": ["title", "lede", "bullets"],
             "additionalProperties": False,
         },
     },
 }
 
 _JUNK_PREFIXES = ("here is", "here's", "headline:", "title:", "naslov:", "naslov je")
-
-
-class _MissingKey(Exception):
-    pass
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,10 @@ class Brief:
     title: str
     bullets: tuple[Bullet, ...]
     lead_article_id: int | None = None
+    # When the summary was written; None for one not stored yet.
+    created_at: datetime | None = None
+    # What, where, when, who, how. None on summaries written before it existed.
+    lede: str | None = None
 
 
 def ordered_excerpts(excerpts: Sequence[ArticleExcerpt]) -> list[ArticleExcerpt]:
@@ -129,13 +138,31 @@ def prompt_excerpts(
     return [lead, *rest]
 
 
-def should_refresh(previous: Brief | None, *, member_count: int, lead_article_id: int) -> bool:
+def should_refresh(
+    previous: Brief | None,
+    *,
+    member_count: int,
+    lead_article_id: int,
+    newest_published_at: datetime | None = None,
+    now: datetime | None = None,
+) -> bool:
     """A story without a summary retries on every new article."""
     if previous is None:
         return True
     if lead_article_id != previous.lead_article_id:
         return True
-    return member_count in COUNT_THRESHOLDS
+    if member_count in COUNT_THRESHOLDS:
+        return True
+    if member_count > max(COUNT_THRESHOLDS) and member_count % COUNT_STEP == 0:
+        return True
+    written = previous.created_at
+    return (
+        written is not None
+        and now is not None
+        and newest_published_at is not None
+        and now - written >= STALE_AFTER
+        and newest_published_at > written
+    )
 
 
 def build_prompt(chosen: Sequence[ArticleExcerpt], previous: Brief | None = None) -> str:
@@ -145,10 +172,16 @@ def build_prompt(chosen: Sequence[ArticleExcerpt], previous: Brief | None = None
         "You summarize a Slovenian news story covered by several outlets.",
         "Use the language of the articles (Slovenian, when the articles are Slovenian).",
         "",
-        "Return a headline and key-point bullets.",
+        "Return a headline, a lede, and key-point bullets.",
         "Headline: neutral, factual, and concise, under 100 characters.",
         "Use natural capitalization: capitalize the first letter and proper names only.",
         "No clickbait, no questions, no exclamation marks.",
+        (
+            "Lede: one or two short sentences, under 300 characters, saying what happened,"
+            " where, when, who was involved, and how. Give the date of the event as day and"
+            " month, e.g. '11. oktobra'; add the time of day when the articles give it."
+            " Never write relative dates such as 'yesterday', 'on Sunday', or 'this week'."
+        ),
         (
             f"Bullets: 1 to {MAX_BULLETS} key facts, most important first. Use fewer when the"
             " articles say little. Each bullet is one sentence under 200 characters."
@@ -163,22 +196,40 @@ def build_prompt(chosen: Sequence[ArticleExcerpt], previous: Brief | None = None
             "The story already has this summary, written from earlier articles:",
             f"Headline: {previous.title}",
         ]
+        if previous.lede:
+            lines.append(f"Lede: {previous.lede}")
         for index, bullet in enumerate(previous.bullets, start=1):
             lines.append(f"P{index}. {bullet.text}")
         lines += [
             "",
             (
-                "Keep the headline and bullets that still hold, word for word. When you keep or"
-                " revise a bullet, set `previous` to its P number. Change only what the articles"
-                " below update or contradict, add bullets for important new facts, and drop"
-                " bullets that no longer matter. Set `previous` to null for new bullets."
+                "Keep the headline, lede, and bullets that still hold, word for word. When you keep"
+                " or revise a bullet, set `previous` to its P number. Rewrite the headline, the"
+                " lede, and any bullet that the articles below update or contradict, add bullets"
+                " for important new facts, and drop bullets that no longer matter. Set `previous`"
+                " to null for new bullets."
             ),
         ]
     else:
         lines.append("Set `previous` to null on every bullet.")
-    lines += ["", "Articles:"]
+    lines += [
+        "",
+        (
+            "The articles are oldest first. When they disagree on a number or on what"
+            " happened, the most recent article is right; the headline must reflect the"
+            " latest state of the story."
+        ),
+        (
+            "Each article is stamped with its publication time (UTC). Turn the relative dates"
+            " in its text into calendar dates using that stamp: 'yesterday' in an article"
+            " published on Mon 2026-10-12 means 11 October, and 'on Tuesday' means 13 October."
+        ),
+        "",
+        "Articles:",
+    ]
     for index, excerpt in enumerate(chosen, start=1):
-        lines.append(f"{index}. Title: {_clip(excerpt.title, limit=300) or excerpt.title}")
+        title = _clip(excerpt.title, limit=300) or excerpt.title
+        lines.append(f"{index}. [{excerpt.published_at:%a %Y-%m-%d %H:%M}] Title: {title}")
         deck = _clip(excerpt.deck)
         summary = _clip(excerpt.summary)
         if deck:
@@ -220,6 +271,7 @@ def parse_brief(
     if not isinstance(data, dict):
         return None
     title = parse_title(data.get("title"))
+    lede = _clean_lede(data.get("lede"))
     raw_bullets = data.get("bullets")
     if title is None or not isinstance(raw_bullets, list):
         return None
@@ -250,14 +302,14 @@ def parse_brief(
     if not bullets:
         return None
     lead = chosen[0].article_id if chosen else None
-    return Brief(title=title, bullets=tuple(bullets), lead_article_id=lead)
+    return Brief(title=title, bullets=tuple(bullets), lead_article_id=lead, lede=lede)
 
 
 def generate_brief(
     excerpts: Sequence[ArticleExcerpt],
     previous: Brief | None = None,
     *,
-    complete: Callable[[str], str] | None = None,
+    complete: llm.Complete | None = None,
 ) -> Brief | None:
     """Return a new summary, or None when the model is unavailable or unusable."""
     chosen = prompt_excerpts(excerpts)
@@ -267,7 +319,11 @@ def generate_brief(
     call = complete if complete is not None else _complete
     try:
         raw = call(prompt)
-    except _MissingKey:
+    except llm.MissingKey:
+        global _missing_key_logged
+        if not _missing_key_logged:
+            logger.warning("OPENROUTER_API_KEY missing; stories keep the first article's title")
+            _missing_key_logged = True
         return None
     except Exception:
         logger.warning("Story summary generation failed", exc_info=True)
@@ -285,8 +341,9 @@ def refresh_brief(
     excerpts: Sequence[ArticleExcerpt],
     previous: Brief | None,
     *,
-    complete: Callable[[str], str] | None = None,
+    complete: llm.Complete | None = None,
     force: bool = False,
+    now: datetime | None = None,
 ) -> Brief | None:
     """New summary when the story changed enough and the model delivered, else None.
 
@@ -295,8 +352,13 @@ def refresh_brief(
     lead = lead_article(excerpts)
     if lead is None:
         return None
+    newest = max(excerpt.published_at for excerpt in excerpts)
     if not force and not should_refresh(
-        previous, member_count=len(excerpts), lead_article_id=lead.article_id
+        previous,
+        member_count=len(excerpts),
+        lead_article_id=lead.article_id,
+        newest_published_at=newest,
+        now=now,
     ):
         return None
     return generate_brief(excerpts, previous, complete=complete)
@@ -343,6 +405,19 @@ def _clean_bullet(text: object) -> str | None:
     return cleaned
 
 
+def _clean_lede(text: object) -> str | None:
+    """A missing or unusable lede leaves the rest of the summary standing."""
+    if not isinstance(text, str):
+        return None
+    cleaned = " ".join(text.split())
+    if not _MIN_LEDE_CHARS <= len(cleaned) <= _MAX_LEDE_CHARS:
+        return None
+    lowered = cleaned.casefold()
+    if "http://" in lowered or "https://" in lowered or "www." in lowered:
+        return None
+    return cleaned
+
+
 def _is_usable_title(text: str) -> bool:
     if not _MIN_TITLE_CHARS <= len(text) <= _MAX_TITLE_CHARS:
         return False
@@ -359,45 +434,4 @@ def _is_usable_title(text: str) -> bool:
 
 
 def _complete(prompt: str) -> str:
-    global _missing_key_logged
-    primary = os.getenv("OPENROUTER_API_KEY") or None
-    if not primary:
-        if not _missing_key_logged:
-            logger.warning("OPENROUTER_API_KEY missing; stories keep the first article's title")
-            _missing_key_logged = True
-        raise _MissingKey()
-    try:
-        return _post(primary, prompt)
-    except urllib.error.HTTPError as exc:
-        fallback = os.getenv("OPENROUTER_FALLBACK_API_KEY") or os.getenv(
-            "OPENROUTER_API_KEY_FALLBACK"
-        )
-        if exc.code == 402 and fallback:
-            return _post(fallback, prompt)
-        raise
-
-
-def _post(api_key: str, prompt: str) -> str:
-    url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-    body = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "reasoning": {"enabled": False},
-        "max_tokens": _MAX_TOKENS,
-        "response_format": _RESPONSE_FORMAT,
-    }
-    request = urllib.request.Request(
-        f"{url}/chat/completions",
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
-        payload = json.loads(response.read())
-    content = payload["choices"][0]["message"]["content"]
-    if not isinstance(content, str):
-        raise ValueError(f"expected string content, got {content!r}")
-    return content
+    return llm.chat(prompt, response_format=RESPONSE_FORMAT, max_tokens=_MAX_TOKENS).content

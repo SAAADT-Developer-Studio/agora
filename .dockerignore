@@ -7,3 +7,4 @@
 infra
 ansible
 .github
+**/.replay

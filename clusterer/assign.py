@@ -5,13 +5,18 @@ member must be close (``JOIN_THRESHOLD``) and the article must also be close
 to the story's centroid (``STORY_THRESHOLD``). Matching one member is not
 enough, so a story cannot drift link by link: A pulls in B, B pulls in C,
 until C has nothing to do with A. Articles that match a member but not the
-story's core go to the judge.
+story's core go to the judge, which picks among the few stories closest to the article.
+
+A story is one event, so it has a lifespan: it takes articles published within
+``STORY_SPAN`` of its first one. Later coverage starts a new story. Without
+that, a story about a vote keeps absorbing the campaign before it and the
+commentary after it, and grows for weeks.
 """
 
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
@@ -20,11 +25,35 @@ JOIN_THRESHOLD = 0.75
 # scores >= 0.756 and the nearest other story of a seed is <= 0.76.
 STORY_THRESHOLD = 0.70
 LLM_FLOOR = 0.55
-# Centroid-to-centroid cosine above which two stories go to the merge judge.
+# Centroid cosine a judged join needs, by the judge's answer. On a replay of
+# the referendum week most "development" joins below 0.70 and "same_event"
+# joins below 0.62 were wrong: inflation figures into a gold-price story, a
+# criminal case into referendum commentary.
+SAME_EVENT_FLOOR = 0.62
+DEVELOPMENT_FLOOR = 0.70
+# How many stories the judge chooses among. The closest by centroid is often
+# a near-tie with the right one.
+JUDGE_CANDIDATES = 3
+# Pair score above which two stories go to the merge judge. See merge_candidates.
 MERGE_THRESHOLD = 0.80
+# Members of the larger story compared with the smaller story's centroid.
+_MERGE_TOP_MEMBERS = 3
+# Pairs with centroids further apart than this are not scored at all.
+_MERGE_PREFILTER = 0.65
+# How long after its first article a story still takes new ones. In production
+# half the articles of 50+ article stories arrived over five days after the
+# first, most of them follow-ups and commentary on an event long over.
+STORY_SPAN = timedelta(days=3)
 SEED = "seed"
 COSINE = "cosine"
 LLM = "llm"
+
+SAME_EVENT = "same_event"
+DEVELOPMENT = "development"
+RELATED_TOPIC = "related_topic"
+DIFFERENT = "different"
+RELATIONS = (SAME_EVENT, DEVELOPMENT, RELATED_TOPIC, DIFFERENT)
+JOIN_RELATIONS = frozenset({SAME_EVENT, DEVELOPMENT})
 
 _PROMPT_MEMBERS = 4
 _PROMPT_MEMBERS_WITH_BRIEF = 3
@@ -49,7 +78,16 @@ class StoryContext:
     members: tuple[PromptArticle, ...]
 
 
-Judge = Callable[[PromptArticle, StoryContext], bool]
+@dataclass(frozen=True)
+class Verdict:
+    """The judge's pick: ``story`` indexes the candidates it was shown, None for none."""
+
+    story: int | None
+    relation: str
+
+
+# None means the judge is unavailable (no API key); the article seeds.
+Judge = Callable[[PromptArticle, Sequence[StoryContext]], Verdict | None]
 
 
 @dataclass(frozen=True)
@@ -67,6 +105,8 @@ class Assignment:
     similarity: float | None
     nearest_article_id: int | None
     story_similarity: float | None = None
+    # The judge's answer, when it was asked.
+    relation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,12 +134,13 @@ def _normalize(vec: np.ndarray) -> np.ndarray:
     return vec / norm
 
 
-def _seed() -> Assignment:
+def _seed(relation: str | None = None) -> Assignment:
     return Assignment(
         story_id=None,
         method=SEED,
         similarity=None,
         nearest_article_id=None,
+        relation=relation,
     )
 
 
@@ -108,6 +149,8 @@ class NeighborIndex:
         self._entries: list[_Entry] = []
         self._sums: dict[int, np.ndarray] = {}
         self._briefs: dict[int, tuple[str, tuple[str, ...]]] = {}
+        # Earliest known article of each story, including members outside the window.
+        self._started: dict[int, datetime] = {}
 
     def add(
         self,
@@ -131,6 +174,19 @@ class NeighborIndex:
         )
         self._entries.append(entry)
         self._sums[story_id] = self._sums.get(story_id, 0) + entry.vector
+        if published_at is not None:
+            self.set_started(story_id, published_at)
+
+    def set_started(self, story_id: int, at: datetime) -> None:
+        """Record a story's first article when it is older than the loaded members."""
+        known = self._started.get(story_id)
+        self._started[story_id] = at if known is None else min(known, at)
+
+    def is_open(self, story_id: int, at: datetime | None) -> bool:
+        """Whether the story still takes an article published at ``at``."""
+        started = self._started.get(story_id)
+        # Read at call time so the replay harness can try other spans.
+        return at is None or started is None or at - started <= STORY_SPAN
 
     def set_brief(self, story_id: int, headline: str, bullets: Sequence[str]) -> None:
         self._briefs[story_id] = (headline, tuple(bullets))
@@ -138,14 +194,18 @@ class NeighborIndex:
     def size(self, story_id: int) -> int:
         return sum(1 for entry in self._entries if entry.story_id == story_id)
 
-    def candidates(self, embedding: Sequence[float]) -> list[Candidate]:
-        """One candidate per story, closest to the story centroid first."""
+    def candidates(
+        self, embedding: Sequence[float], at: datetime | None = None
+    ) -> list[Candidate]:
+        """One candidate per story still open at ``at``, closest to the centroid first."""
         if not self._entries:
             return []
         query = _normalize(np.asarray(embedding, dtype=np.float64))
         similarities = np.stack([entry.vector for entry in self._entries]) @ query
         nearest: dict[int, tuple[float, int]] = {}
         for entry, similarity in zip(self._entries, similarities):
+            if not self.is_open(entry.story_id, at):
+                continue
             best = nearest.get(entry.story_id)
             if best is None or similarity > best[0]:
                 nearest[entry.story_id] = (float(similarity), entry.article_id)
@@ -199,31 +259,58 @@ class NeighborIndex:
         return StoryContext(headline=brief[0], bullets=brief[1], members=members)
 
     def merge_candidates(
-        self, changed: set[int], threshold: float = MERGE_THRESHOLD
+        self,
+        changed: set[int],
+        threshold: float = MERGE_THRESHOLD,
+        *,
+        at: datetime | None = None,
     ) -> list[MergeCandidate]:
-        """Story pairs with close centroids, at least one of them changed this run.
+        """Story pairs that look like one story, at least one of them changed this run.
+
+        A pair scores the higher of its centroid cosine and the mean cosine of
+        the smaller story's centroid to the larger story's closest members. A
+        big story's centroid is a blur of all its developments, so a duplicate
+        of one development matches its members, not its centroid.
 
         Every story in the index has an article inside the window, so their time
-        ranges overlap. The larger story is kept; on a tie, the older one.
-        Closest pairs come first.
+        ranges overlap. Stories closed at ``at`` take no merges, the same as
+        they take no articles. The larger story is kept; on a tie, the older
+        one. Closest pairs come first.
         """
-        story_ids = sorted(self._sums)
+        story_ids = sorted(s for s in self._sums if self.is_open(s, at))
         if len(story_ids) < 2 or not changed:
             return []
+        position = {story_id: i for i, story_id in enumerate(story_ids)}
         centroids = np.stack([_normalize(self._sums[story_id]) for story_id in story_ids])
         similarities = centroids @ centroids.T
-        sizes = {story_id: self.size(story_id) for story_id in story_ids}
+        entries = [entry for entry in self._entries if entry.story_id in position]
+        vectors = np.stack([entry.vector for entry in entries])
+        owners = np.array([position[entry.story_id] for entry in entries])
+        sizes = np.bincount(owners, minlength=len(story_ids))
         pairs: list[MergeCandidate] = []
-        for i, first in enumerate(story_ids):
-            for j in range(i + 1, len(story_ids)):
-                second = story_ids[j]
-                if first not in changed and second not in changed:
+        seen: set[tuple[int, int]] = set()
+        for story_id in sorted(changed & set(position)):
+            i = position[story_id]
+            # Row: each story's centroid against this story's members, and this
+            # story's centroid against every member.
+            against_mine = centroids @ vectors[owners == i].T
+            mine_against = vectors @ centroids[i]
+            for j in np.flatnonzero(similarities[i] >= _MERGE_PREFILTER):
+                if j == i:
                     continue
-                similarity = float(similarities[i, j])
-                if similarity < threshold:
+                keep, drop = sorted((i, int(j)), key=lambda k: (-sizes[k], story_ids[k]))
+                if (keep, drop) in seen:
                     continue
-                keep, drop = sorted((first, second), key=lambda story: (-sizes[story], story))
-                pairs.append(MergeCandidate(keep, drop, similarity))
+                if keep == i:
+                    members = against_mine[drop]
+                else:
+                    members = mine_against[owners == keep]
+                top = np.sort(members)[-_MERGE_TOP_MEMBERS:]
+                score = max(float(similarities[i, j]), float(top.mean()))
+                if score < threshold:
+                    continue
+                seen.add((keep, drop))
+                pairs.append(MergeCandidate(story_ids[keep], story_ids[drop], score))
         return sorted(pairs, key=lambda pair: pair.similarity, reverse=True)
 
     def move(self, from_story_id: int, to_story_id: int) -> None:
@@ -238,6 +325,9 @@ class NeighborIndex:
         if moved is not None:
             self._sums[to_story_id] = self._sums.get(to_story_id, 0) + moved
         self._briefs.pop(from_story_id, None)
+        started = self._started.pop(from_story_id, None)
+        if started is not None:
+            self.set_started(to_story_id, started)
 
 
 def decide(
@@ -253,7 +343,9 @@ def decide(
     judge: Judge | None = None,
 ) -> Assignment:
     candidates = [
-        candidate for candidate in index.candidates(embedding) if candidate.similarity >= floor
+        candidate
+        for candidate in index.candidates(embedding, published_at)
+        if candidate.similarity >= floor
     ]
     if not candidates:
         return _seed()
@@ -262,23 +354,33 @@ def decide(
             return _join(candidate, COSINE)
     if judge is None:
         return _seed()
-    best = candidates[0]
+    shown = candidates[:JUDGE_CANDIDATES]
     article = PromptArticle(title=title, summary=summary, published_at=published_at)
     try:
-        same = judge(article, index.story_context(best.story_id, best.nearest_article_id))
+        verdict = judge(
+            article,
+            [index.story_context(c.story_id, c.nearest_article_id) for c in shown],
+        )
     except Exception:
         logger.warning("Same-happening judge failed; seeding", exc_info=True)
         return _seed()
-    if not same:
+    if verdict is None:
         return _seed()
-    return _join(best, LLM)
+    if verdict.story is None or verdict.relation not in JOIN_RELATIONS:
+        return _seed(verdict.relation)
+    chosen = shown[verdict.story]
+    floor_for_relation = SAME_EVENT_FLOOR if verdict.relation == SAME_EVENT else DEVELOPMENT_FLOOR
+    if chosen.story_similarity < floor_for_relation:
+        return _seed(verdict.relation)
+    return _join(chosen, LLM, verdict.relation)
 
 
-def _join(candidate: Candidate, method: str) -> Assignment:
+def _join(candidate: Candidate, method: str, relation: str | None = None) -> Assignment:
     return Assignment(
         story_id=candidate.story_id,
         method=method,
         similarity=candidate.similarity,
         nearest_article_id=candidate.nearest_article_id,
         story_similarity=candidate.story_similarity,
+        relation=relation,
     )
