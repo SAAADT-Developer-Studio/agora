@@ -32,3 +32,6 @@ jobs:
       - name: Run tests
         run: |
           uv run --package clusterer --directory clusterer pytest
+        env:
+          # schema.py builds an engine at import. These tests do not connect.
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/test
