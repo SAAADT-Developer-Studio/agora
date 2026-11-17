@@ -243,6 +243,13 @@ def test_mismatched_run_membership_is_rejected():
         prepare_cluster(stored, NOW, RankingConfig(version="test"))
 
 
+def test_hidden_cluster_is_not_scored():
+    cluster = stored_cluster()
+    cluster.hidden = True
+    assert score_cluster(cluster, NOW, RankingConfig(version="test"), ranking_run_id=7) == "skipped"
+    assert cluster.rank_score is None
+
+
 def test_empty_cluster_is_not_given_a_fake_score():
     stored = stored_cluster()
     stored.memberships.clear()

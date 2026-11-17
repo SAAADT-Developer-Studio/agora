@@ -121,6 +121,41 @@ class ClusterRepository:
         return self.session.scalars(stmt).all()
 
 
+def cluster_ranking_statement(*, run_id: int, after_id: int = 0, limit: int = 100):
+    """One page of a clustering run, excluding rows an operator has hidden.
+
+    Hidden clusters are not scored. Their stored rank, if any, is left in
+    place; readers filter on ``hidden`` rather than on the score.
+    """
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    return (
+        select(ClusterV2)
+        .where(
+            ClusterV2.run_id == run_id,
+            ClusterV2.id > after_id,
+            ClusterV2.hidden.is_(False),
+        )
+        .order_by(ClusterV2.id)
+        .limit(limit)
+        .options(
+            # Previous explanations can be large; scoring replaces them.
+            load_only(
+                ClusterV2.id, ClusterV2.run_id, ClusterV2.created_at, ClusterV2.hidden,
+            ),
+            selectinload(ClusterV2.memberships)
+            .selectinload(ArticleCluster.article)
+            .load_only(
+                Article.id, Article.title, Article.published_at, Article.first_seen_at,
+                Article.summary, Article.content, Article.categories, Article.llm_rank,
+                Article.embedding, Article.news_provider_key,
+            )
+            .selectinload(Article.news_provider)
+            .load_only(NewsProvider.key, NewsProvider.rank)
+        )
+    )
+
+
 def expired_ranking_statement(
     *, before: datetime, keep_run_id: int | None, after_id: int = 0, limit: int = 100,
 ):
@@ -179,27 +214,13 @@ class ClusterV2Repository:
     def get_ranking_batch(
         self, *, run_id: int, after_id: int = 0, limit: int = 100,
     ) -> Sequence[ClusterV2]:
-        """Page one clustering run, retaining each member's article history."""
-        if limit < 1:
-            raise ValueError("limit must be positive")
+        """Page one clustering run, retaining each member's article history.
+
+        Hidden clusters are omitted. Callers that page by id still advance
+        past them, so a hidden row is not scored on a later page.
+        """
         return self.session.scalars(
-            select(ClusterV2)
-            .where(ClusterV2.run_id == run_id, ClusterV2.id > after_id)
-            .order_by(ClusterV2.id)
-            .limit(limit)
-            .options(
-                # Previous explanations can be large; scoring replaces them.
-                load_only(ClusterV2.id, ClusterV2.run_id, ClusterV2.created_at),
-                selectinload(ClusterV2.memberships)
-                .selectinload(ArticleCluster.article)
-                .load_only(
-                    Article.id, Article.title, Article.published_at, Article.first_seen_at,
-                    Article.summary, Article.content, Article.categories, Article.llm_rank,
-                    Article.embedding, Article.news_provider_key,
-                )
-                .selectinload(Article.news_provider)
-                .load_only(NewsProvider.key, NewsProvider.rank)
-            )
+            cluster_ranking_statement(run_id=run_id, after_id=after_id, limit=limit)
         ).all()
 
 
@@ -367,6 +388,9 @@ class StoryRepository:
             .values(story_id=keep.id)
         )
         drop.merged_into_story_id = keep.id
+        # A hidden story must not reappear as the visible survivor.
+        if drop.hidden:
+            keep.hidden = True
         if drop.last_article_published_at > keep.last_article_published_at:
             keep.last_article_published_at = drop.last_article_published_at
         self.session.expire(drop, ["memberships"])

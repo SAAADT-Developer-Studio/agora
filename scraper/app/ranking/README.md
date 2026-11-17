@@ -1093,9 +1093,10 @@ does not change. The batch clusterer no longer runs a ranking hook;
 The default window is **14 days**, the same horizon as /novo:
 `story.last_article_published_at >= evaluated_at - --days`. `--days` widens or
 narrows that window. It is not an expiry sweep. The loader also requires
-`merged_into_story_id IS NULL` and at least one `story_article` row. Merged
-stories are redirects, and an empty story has no articles to score. Those rows
-are not selected, so they are not counted as skips. A selected story that cannot
+`merged_into_story_id IS NULL`, `hidden IS false`, and at least one
+`story_article` row. Merged stories are redirects, hidden stories were
+suppressed by an operator in Postgres, and an empty story has no articles to
+score. Those rows are not selected, so they are not counted as skips. A selected story that cannot
 be scored (empty title, non-finite embedding, invalid input) is logged, skipped,
 and included in `ranking_run.skipped_count`.
 

@@ -1,7 +1,8 @@
 """Record observation scores for recent streaming stories.
 
 The score is observation-only. It is not an input to feed ordering, and this
-command does not update story rows or any cluster table. Each run inserts
+command does not update story rows or any cluster table. Stories with
+``hidden`` set are not selected. Each run inserts
 ``story_rank`` rows and one ``ranking_run`` row with ``source='story'``.
 
 Full component summaries are kept only on the latest row per story. After

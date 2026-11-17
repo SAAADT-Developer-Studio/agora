@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from database import schema
-from database.repositories import expired_ranking_statement
+from database.repositories import cluster_ranking_statement, expired_ranking_statement
 
 BEFORE = datetime(2026, 9, 18, tzinfo=timezone.utc)
 PREDICATE = (
@@ -21,6 +21,13 @@ def _sql(*, keep_run_id):
         before=BEFORE, keep_run_id=keep_run_id, after_id=0, limit=100,
     )
     return str(statement.compile(dialect=postgresql.dialect()))
+
+
+def test_cluster_ranking_batch_skips_hidden_clusters():
+    statement = cluster_ranking_statement(run_id=5, after_id=0, limit=100)
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "cluster_v2.hidden IS false" in sql
+    assert "cluster_v2.run_id = %(run_id_1)s" in sql
 
 
 def test_expiry_predicate_is_literal_so_a_generic_plan_can_use_the_index():

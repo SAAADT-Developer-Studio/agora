@@ -149,6 +149,33 @@ async def enrich_cluster_payloads_with_wikimedia(
     return enriched
 
 
+def hidden_member_ids(clusters: Sequence[ClusterV2]) -> set[int]:
+    """Article ids that belong to a hidden cluster in the previous set."""
+    ids: set[int] = set()
+    for cluster in clusters:
+        if not cluster.hidden:
+            continue
+        for membership in cluster.memberships:
+            ids.add(membership.article_id)
+    return ids
+
+
+def inherits_hidden(article_ids: Sequence[int], hidden_ids: set[int]) -> bool:
+    """True when this remint shares any article with a hidden previous cluster.
+
+    HDBSCAN inserts a new ``cluster_v2`` row every run. The in-process
+    membership hash matches only an identical article set, so the first added
+    or dropped member would publish a visible row. Sharing any member keeps
+    the hide through that drift, through a split (each child still overlaps),
+    and through a merge (the combined row still contains the hidden members).
+    A cluster that shares nothing stays visible. An empty ``hidden_ids`` set,
+    the default when nothing was hidden, makes this a no-op.
+    """
+    if not article_ids or not hidden_ids:
+        return False
+    return any(article_id in hidden_ids for article_id in article_ids)
+
+
 def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, ClusterV2]:
     hash_to_cluster_mapping = dict()
     for cluster in clusters:
@@ -218,6 +245,7 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
 
     clusters_pending_title_generation: list[list[Article]] = []
     hash_to_cluster_mapping = get_hash_to_cluster_mapping(prev_clusters)
+    hidden_ids = hidden_member_ids(prev_clusters)
 
     final: list[ClusterPayload] = []
 
@@ -264,6 +292,7 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
             wiki_image_metadata=wiki_image_metadata,
             wiki_image_lookup_at=wiki_image_lookup_at,
             wiki_image_last_attempt_at=wiki_image_last_attempt_at,
+            hidden=inherits_hidden([article.id for article in cluster_articles], hidden_ids),
         )
         for article in cluster_articles:
             cluster_v2.memberships.append(
@@ -279,6 +308,9 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
 
     logging.info(f"Created {len(generated_titles)} new clusters.")
     logging.info(f"Kept {len(final) - len(generated_titles)} clusters.")
+    hidden_count = sum(cluster.hidden for cluster in new_clusters)
+    if hidden_count:
+        logging.info("Carried hidden onto %d reminted clusters", hidden_count)
 
 
 # this is a function to bootstrap the clustering run for existing articles

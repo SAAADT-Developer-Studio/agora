@@ -55,6 +55,8 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
         logger.info("No unassigned articles in the %d-day window", WINDOW_DAYS)
         return
 
+    # Captured once. Stories seeded in this pass are visible.
+    hidden_story_ids = {story_id for story_id, story in stories.items() if story.hidden}
     changed: set[int] = set()
     seeded = 0
     cosine = 0
@@ -67,6 +69,7 @@ def _assign_unassigned(uow: UnitOfWork) -> None:
             summary=article.summary,
             published_at=article.published_at,
             judge=same_happening,
+            skip_judge_story_ids=hidden_story_ids,
         )
         if assignment.story_id is None:
             story = Story(
@@ -129,6 +132,12 @@ def _merge_duplicates(
     for pair in index.merge_candidates(changed):
         if pair.keep_story_id in merged or pair.drop_story_id in merged:
             continue
+        keep = stories[pair.keep_story_id]
+        drop = stories[pair.drop_story_id]
+        # Both are already hidden. Merging them does not change what readers
+        # see, and the judge is an LLM call.
+        if keep.hidden and drop.hidden:
+            continue
         try:
             same = same_story(
                 index.story_context(pair.keep_story_id), index.story_context(pair.drop_story_id)
@@ -138,20 +147,25 @@ def _merge_duplicates(
             continue
         if not same:
             continue
-        keep = stories[pair.keep_story_id]
-        drop = stories[pair.drop_story_id]
         uow.stories.merge(drop, keep)
         index.move(drop.id, keep.id)
         merged.add(drop.id)
         logger.info(
-            "Merged story %s into %s (centroid cosine %.3f)", drop.id, keep.id, pair.similarity
+            "Merged story %s into %s (centroid cosine %.3f, hidden=%s)",
+            drop.id, keep.id, pair.similarity, keep.hidden,
         )
+        if keep.hidden:
+            continue
         _refresh_summary(uow, keep, index, force=True)
 
 
 def _refresh_summary(
     uow: UnitOfWork, story: Story, index: NeighborIndex, *, force: bool = False
 ) -> None:
+    # The summary is what readers would show. A hidden story is not shown,
+    # and refreshing it is an LLM call. Assignment already happened.
+    if story.hidden:
+        return
     uow.session.flush()
     excerpts = [
         ArticleExcerpt(
