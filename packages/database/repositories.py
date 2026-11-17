@@ -121,6 +121,24 @@ class ClusterRepository:
         return self.session.scalars(stmt).all()
 
 
+def hidden_article_ids_statement(cluster_ids: Sequence[int]):
+    """Article ids of the given clusters that are hidden in the database now.
+
+    Clustering loads the previous run, then spends the rest of the run on
+    HDBSCAN, titles, and images. An operator can commit a hide during that
+    gap. This statement is executed immediately before the new rows are
+    inserted, so the remint sees that commit. ``cluster_ids`` must be non-empty;
+    an empty ``IN`` list is not valid SQL.
+    """
+    if not cluster_ids:
+        raise ValueError("cluster_ids must not be empty")
+    return (
+        select(ArticleCluster.article_id)
+        .join(ClusterV2, ClusterV2.id == ArticleCluster.cluster_id)
+        .where(ClusterV2.id.in_(list(cluster_ids)), ClusterV2.hidden.is_(True))
+    )
+
+
 def cluster_ranking_statement(*, run_id: int, after_id: int = 0, limit: int = 100):
     """One page of a clustering run, excluding rows an operator has hidden.
 

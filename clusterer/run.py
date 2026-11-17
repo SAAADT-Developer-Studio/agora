@@ -151,8 +151,7 @@ def _merge_duplicates(
         index.move(drop.id, keep.id)
         merged.add(drop.id)
         logger.info(
-            "Merged story %s into %s (centroid cosine %.3f, hidden=%s)",
-            drop.id, keep.id, pair.similarity, keep.hidden,
+            "Merged story %s into %s (centroid cosine %.3f)", drop.id, keep.id, pair.similarity
         )
         if keep.hidden:
             continue

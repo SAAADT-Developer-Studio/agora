@@ -9,6 +9,7 @@ from langchain.chat_models import BaseChatModel
 from app.clusterer.cluster import HDBSCAN_PARAMS, cluster_with_confidence
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
 from app.clusterer.hash_cluster import hash_cluster
+from database.repositories import hidden_article_ids_statement
 from database.schema import Article, ArticleCluster, ClusterRun, ClusterV2
 from database.unit_of_work import UnitOfWork
 from app.integrations.wikimedia import lookup_wikimedia_images_for_clusters
@@ -161,19 +162,34 @@ def hidden_member_ids(clusters: Sequence[ClusterV2]) -> set[int]:
 
 
 def inherits_hidden(article_ids: Sequence[int], hidden_ids: set[int]) -> bool:
-    """True when this remint shares any article with a hidden previous cluster.
+    """True when at least half of this remint comes from hidden clusters.
 
     HDBSCAN inserts a new ``cluster_v2`` row every run. The in-process
-    membership hash matches only an identical article set, so the first added
-    or dropped member would publish a visible row. Sharing any member keeps
-    the hide through that drift, through a split (each child still overlaps),
-    and through a merge (the combined row still contains the hidden members).
-    A cluster that shares nothing stays visible. An empty ``hidden_ids`` set,
-    the default when nothing was hidden, makes this a no-op.
+    membership hash matches only an identical article set, so a one-article
+    drift of the hidden cluster itself would publish a visible row. Half or
+    more of the new cluster's own members must be articles of a hidden
+    cluster in the previous set. A hidden story that adds or drops a member
+    still stays hidden, and so does each half of a split.
+
+    The share is of the new cluster, not of the old one. One article moving
+    from a hidden pair into a 38-article cluster is not half of that cluster,
+    so the large cluster stays visible. Treating any shared article as enough
+    hid the large cluster, and the next run then treated all of its articles
+    as hidden, so the hide grew from 2 articles to 40. An empty hidden set,
+    the default, is a no-op.
     """
-    if not article_ids or not hidden_ids:
+    total = len(article_ids)
+    if total == 0 or not hidden_ids:
         return False
-    return any(article_id in hidden_ids for article_id in article_ids)
+    overlap = sum(article_id in hidden_ids for article_id in article_ids)
+    return overlap * 2 >= total
+
+
+def load_hidden_article_ids(session, cluster_ids: Sequence[int]) -> set[int]:
+    """Hidden article ids for these clusters, read from the database now."""
+    if not cluster_ids:
+        return set()
+    return set(session.scalars(hidden_article_ids_statement(cluster_ids)).all())
 
 
 def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, ClusterV2]:
@@ -245,7 +261,6 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
 
     clusters_pending_title_generation: list[list[Article]] = []
     hash_to_cluster_mapping = get_hash_to_cluster_mapping(prev_clusters)
-    hidden_ids = hidden_member_ids(prev_clusters)
 
     final: list[ClusterPayload] = []
 
@@ -273,6 +288,11 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
         for title, cluster_articles in zip(generated_titles, clusters_pending_title_generation)
     )
     final = await enrich_cluster_payloads_with_wikimedia(final)
+    # After titles and images. An operator can commit a hide during that work;
+    # the rows loaded at the start of the run would still say visible.
+    hidden_ids = load_hidden_article_ids(
+        uow.session, [cluster.id for cluster in prev_clusters]
+    )
     new_clusters: list[ClusterV2] = []
 
     for i, (
