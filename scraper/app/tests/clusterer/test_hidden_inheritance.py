@@ -1,13 +1,14 @@
 """A reminted cluster stays hidden when it still is the hidden story."""
 
 from datetime import datetime, timezone
+import logging
 from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.dialects import postgresql
 
 from database.schema import Article, ArticleCluster, ClusterV2
-from app.clusterer.run_clustering import dropped_hide_ids, inherits_hidden, run_clustering
+from app.clusterer.run_clustering import hide_losses, inherits_hidden, run_clustering
 
 
 def test_nothing_hidden_is_a_no_op():
@@ -41,10 +42,20 @@ def test_one_shared_article_does_not_hide_a_large_cluster():
 
 def test_burst_of_new_articles_keeps_a_hidden_cluster():
     # 4 hidden + 5 new is 4/9 of the remint, under half, but it is the whole
-    # hidden cluster. Dropping the hide would publish the story someone hid.
+    # hidden cluster and hidden articles are more than a quarter of the remint.
     hidden = [{1, 2, 3, 4}]
-    burst = [1, 2, 3, 4, 5, 6, 7, 8, 9]
-    assert inherits_hidden(burst, hidden) is True
+    assert inherits_hidden([1, 2, 3, 4, 5, 6, 7, 8, 9], hidden) is True
+    # 4 hidden + 10 new is 4/14, still at least 25%.
+    assert inherits_hidden(list(range(1, 15)), hidden) is True
+
+
+def test_hidden_singleton_absorbed_by_a_large_cluster_is_dropped():
+    # A 1-article hide inside 38 others is the whole hidden cluster, but only
+    # 1/39 of the remint. It stays visible and the hide is dropped.
+    big = [1, *range(2, 40)]
+    assert len(big) == 39
+    assert inherits_hidden(big, [{1}]) is False
+    assert hide_losses({7: {1}}, [(set(big), False)]) == ([7], [])
 
 
 def test_split_stays_hidden_and_a_minority_merge_does_not():
@@ -59,10 +70,11 @@ def test_split_stays_hidden_and_a_minority_merge_does_not():
 def test_hide_is_dropped_only_when_every_remint_is_visible():
     hidden = {10: {1, 2}}
     visible_split = [({1, 3, 4, 5, 6}, False), ({2, 7, 8, 9, 10}, False)]
-    assert dropped_hide_ids(hidden, visible_split) == [10]
+    assert hide_losses(hidden, visible_split) == ([10], [])
+    # Article 1 stays in a hidden remint and article 2 leaks into a visible one.
     preserved = [({1}, True), ({2, *range(3, 41)}, False)]
-    assert dropped_hide_ids(hidden, preserved) == []
-    assert dropped_hide_ids({11: set()}, visible_split) == []
+    assert hide_losses(hidden, preserved) == ([], [10])
+    assert hide_losses({11: set()}, visible_split) == ([], [])
 
 
 class _Session:
@@ -118,6 +130,7 @@ def _prev_cluster(cluster_id, article_ids, *, hidden, published_at):
 
 async def _run(
     monkeypatch, *, in_memory_hidden, hidden_at_start, hidden_during_enrich, regroup=None,
+    fail_commit=False,
 ):
     """Run clustering with HDBSCAN, titles, and images replaced.
 
@@ -152,6 +165,24 @@ async def _run(
     monkeypatch.setattr("app.clusterer.run_clustering.enrich_cluster_payloads_with_wikimedia", enrich)
     monkeypatch.setattr("app.clusterer.run_clustering.cluster_with_confidence", regroup)
     saved = []
+    events = []
+    original_warning = logging.warning
+
+    def warning(message, *args, **kwargs):
+        events.append("log")
+        original_warning(message, *args, **kwargs)
+
+    monkeypatch.setattr("app.clusterer.run_clustering.logging.warning", warning)
+
+    def bulk_create(clusters):
+        events.append("bulk_create")
+        saved.extend(clusters)
+
+    def commit():
+        events.append("commit")
+        if fail_commit:
+            raise RuntimeError("commit failed")
+
     uow = SimpleNamespace(
         cluster_runs=SimpleNamespace(
             get_latest=lambda: SimpleNamespace(id=1, clusters=[small, large]),
@@ -159,18 +190,19 @@ async def _run(
         ),
         session=session,
         articles=SimpleNamespace(get_all_since=lambda since: []),
-        clusters_v2=SimpleNamespace(bulk_create=saved.extend),
+        clusters_v2=SimpleNamespace(bulk_create=bulk_create),
+        commit=commit,
     )
     await run_clustering(uow, SimpleNamespace())
     sql = "\n".join(
         str(statement.compile(dialect=postgresql.dialect())) for statement in session.statements
     )
-    return saved, sql
+    return saved, sql, events
 
 
 @pytest.mark.asyncio
 async def test_run_clustering_uses_a_hide_committed_before_insert(monkeypatch):
-    saved, sql = await _run(
+    saved, sql, events = await _run(
         monkeypatch, in_memory_hidden=False, hidden_at_start=set(), hidden_during_enrich={1, 2},
     )
     by_members = {
@@ -182,11 +214,12 @@ async def test_run_clustering_uses_a_hide_committed_before_insert(monkeypatch):
     assert by_members[big].hidden is False
     assert "cluster_v2.hidden IS true" in sql
     assert "article_cluster.article_id" in sql
+    assert events[:2] == ["bulk_create", "commit"]
 
 
 @pytest.mark.asyncio
 async def test_run_clustering_drops_a_hide_cleared_before_insert(monkeypatch):
-    saved, sql = await _run(
+    saved, sql, _events = await _run(
         monkeypatch, in_memory_hidden=True, hidden_at_start={1, 2}, hidden_during_enrich=set(),
     )
     assert saved
@@ -205,7 +238,7 @@ async def test_run_clustering_warns_when_a_hide_lands_only_in_visible_clusters(
         return {0: left, 1: right}, {article.id: 0.8 for article in articles}
 
     with caplog.at_level("WARNING"):
-        saved, _sql = await _run(
+        saved, _sql, events = await _run(
             monkeypatch,
             in_memory_hidden=False,
             hidden_at_start=set(),
@@ -215,6 +248,29 @@ async def test_run_clustering_warns_when_a_hide_lands_only_in_visible_clusters(
     assert saved
     assert all(cluster.hidden is False for cluster in saved)
     assert "Hide dropped for cluster 10" in caplog.text
+    assert "Hide partially dropped" not in caplog.text
+    assert events == ["bulk_create", "commit", "log"]
+
+
+@pytest.mark.asyncio
+async def test_hide_dropped_is_not_logged_when_commit_fails(monkeypatch, caplog):
+    def split_across_two_visible_clusters(articles):
+        by_id = {article.id: article for article in articles}
+        left = [by_id[1], *[by_id[article_id] for article_id in range(3, 22)]]
+        right = [by_id[2], *[by_id[article_id] for article_id in range(22, 41)]]
+        return {0: left, 1: right}, {article.id: 0.8 for article in articles}
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await _run(
+                monkeypatch,
+                in_memory_hidden=False,
+                hidden_at_start=set(),
+                hidden_during_enrich={1, 2},
+                regroup=split_across_two_visible_clusters,
+                fail_commit=True,
+            )
+    assert "Hide dropped" not in caplog.text
 
 
 def test_visible_overlap_does_not_hide_a_new_cluster():

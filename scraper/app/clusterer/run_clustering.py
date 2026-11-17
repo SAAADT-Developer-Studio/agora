@@ -156,17 +156,11 @@ def inherits_hidden(
     """True when this remint should stay hidden.
 
     Either at least half of the new cluster's articles come from hidden
-    clusters, or the new cluster contains more than half of any one previous
-    hidden cluster. The first keeps a hidden story that drifts by a member.
-    The second keeps a hide when that story gains more new articles than it
-    already has in one run (4 hidden + 5 new is 4/9 of the remint, but all 4
-    of the hidden cluster). A silent unhide is the worse failure for a
-    moderation hide.
-
-    One article from a hidden pair joining a 38-article cluster is exactly
-    half of that pair, not more, and it is not half of the new cluster, so
-    the large cluster stays visible. An empty hidden list, the default, is a
-    no-op.
+    clusters, or both of these hold: hidden articles are at least a quarter
+    of the remint, and the remint contains more than half of some previous
+    hidden cluster. The quarter floor stops a hidden singleton, which is
+    common, from hiding the large cluster that absorbed it. 4 hidden + 5 new
+    and 4 hidden + 10 new stay hidden. An empty hidden list is a no-op.
     """
     groups = [members for members in hidden_clusters if members]
     total = len(article_ids)
@@ -176,6 +170,10 @@ def inherits_hidden(
     overlap = sum(article_id in hidden_ids for article_id in article_ids)
     if overlap * 2 >= total:
         return True
+    # overlap * 4 >= total is "at least 25%". Below that, do not apply the
+    # per-cluster majority rule.
+    if overlap * 4 < total:
+        return False
     new_ids = set(article_ids)
     for members in groups:
         if len(new_ids & members) * 2 > len(members):
@@ -194,31 +192,39 @@ def load_hidden_clusters(session, cluster_ids: Sequence[int]) -> dict[int, set[i
     return grouped
 
 
-def dropped_hide_ids(
+def hide_losses(
     hidden_clusters: Mapping[int, set[int]],
     remints: Sequence[tuple[set[int], bool]],
-) -> list[int]:
-    """Previous hidden clusters whose articles were reminted only into visible rows.
+) -> tuple[list[int], list[int]]:
+    """Return fully dropped cluster ids, then partially dropped ones.
 
-    A cluster with no articles in this run is left out: nothing was reminted.
+    Fully dropped: every reminted article landed in a visible cluster.
+    Partially dropped: a hidden remint kept some articles and a visible
+    remint took others. A cluster with no articles in this run is left out.
     """
     dropped: list[int] = []
+    partial: list[int] = []
     for cluster_id in sorted(hidden_clusters):
         members = hidden_clusters[cluster_id]
         if not members:
             continue
-        seen = False
-        preserved = False
+        in_hidden: set[int] = set()
+        in_visible: set[int] = set()
         for article_ids, hidden in remints:
-            if not members & article_ids:
+            overlap = members & article_ids
+            if not overlap:
                 continue
-            seen = True
             if hidden:
-                preserved = True
-                break
-        if seen and not preserved:
+                in_hidden.update(overlap)
+            else:
+                in_visible.update(overlap)
+        if not in_hidden and not in_visible:
+            continue
+        if in_hidden and in_visible:
+            partial.append(cluster_id)
+        elif in_visible:
             dropped.append(cluster_id)
-    return dropped
+    return dropped, partial
 
 
 def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, ClusterV2]:
@@ -355,15 +361,25 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
                 )
             )
         new_clusters.append(cluster_v2)
-    for cluster_id in dropped_hide_ids(hidden_clusters, [
+    uow.clusters_v2.bulk_create(new_clusters)
+    # Log only once the new rows are committed. A failed commit must not
+    # report a hide as dropped.
+    uow.commit()
+    dropped, partial = hide_losses(hidden_clusters, [
         ({member.article_id for member in cluster.memberships}, cluster.hidden)
         for cluster in new_clusters
-    ]):
+    ])
+    for cluster_id in dropped:
         logging.warning(
             "Hide dropped for cluster %s: its articles were reminted only into visible clusters",
             cluster_id,
         )
-    uow.clusters_v2.bulk_create(new_clusters)
+    for cluster_id in partial:
+        logging.warning(
+            "Hide partially dropped for cluster %s: some of its articles were reminted "
+            "into a visible cluster",
+            cluster_id,
+        )
 
     logging.info(f"Created {len(generated_titles)} new clusters.")
     logging.info(f"Kept {len(final) - len(generated_titles)} clusters.")
