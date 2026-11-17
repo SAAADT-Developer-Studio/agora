@@ -121,20 +121,21 @@ class ClusterRepository:
         return self.session.scalars(stmt).all()
 
 
-def hidden_article_ids_statement(cluster_ids: Sequence[int]):
-    """Article ids of the given clusters that are hidden in the database now.
+def hidden_cluster_members_statement(cluster_ids: Sequence[int]):
+    """Hidden cluster id and article id, read from the database now.
 
-    Clustering loads the previous run, then spends the rest of the run on
-    HDBSCAN, titles, and images. An operator can commit a hide during that
-    gap. This statement is executed immediately before the new rows are
-    inserted, so the remint sees that commit. ``cluster_ids`` must be non-empty;
-    an empty ``IN`` list is not valid SQL.
+    One row per membership, so a remint can be compared with each hidden
+    cluster on its own. Clustering loads the previous run, then spends the
+    rest of the run on HDBSCAN, titles, and images. An operator can commit a
+    hide during that gap. This statement is executed immediately before the
+    new rows are inserted. ``cluster_ids`` must be non-empty; an empty ``IN``
+    list is not valid SQL.
     """
     if not cluster_ids:
         raise ValueError("cluster_ids must not be empty")
     return (
-        select(ArticleCluster.article_id)
-        .join(ClusterV2, ClusterV2.id == ArticleCluster.cluster_id)
+        select(ClusterV2.id, ArticleCluster.article_id)
+        .join(ArticleCluster, ArticleCluster.cluster_id == ClusterV2.id)
         .where(ClusterV2.id.in_(list(cluster_ids)), ClusterV2.hidden.is_(True))
     )
 

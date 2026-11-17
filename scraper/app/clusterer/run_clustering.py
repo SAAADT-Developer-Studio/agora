@@ -1,7 +1,7 @@
 import heapq
 import itertools
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
 from langchain.chat_models import BaseChatModel
@@ -9,7 +9,7 @@ from langchain.chat_models import BaseChatModel
 from app.clusterer.cluster import HDBSCAN_PARAMS, cluster_with_confidence
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
 from app.clusterer.hash_cluster import hash_cluster
-from database.repositories import hidden_article_ids_statement
+from database.repositories import hidden_cluster_members_statement
 from database.schema import Article, ArticleCluster, ClusterRun, ClusterV2
 from database.unit_of_work import UnitOfWork
 from app.integrations.wikimedia import lookup_wikimedia_images_for_clusters
@@ -150,46 +150,75 @@ async def enrich_cluster_payloads_with_wikimedia(
     return enriched
 
 
-def hidden_member_ids(clusters: Sequence[ClusterV2]) -> set[int]:
-    """Article ids that belong to a hidden cluster in the previous set."""
-    ids: set[int] = set()
-    for cluster in clusters:
-        if not cluster.hidden:
-            continue
-        for membership in cluster.memberships:
-            ids.add(membership.article_id)
-    return ids
+def inherits_hidden(
+    article_ids: Sequence[int], hidden_clusters: Sequence[set[int]],
+) -> bool:
+    """True when this remint should stay hidden.
 
+    Either at least half of the new cluster's articles come from hidden
+    clusters, or the new cluster contains more than half of any one previous
+    hidden cluster. The first keeps a hidden story that drifts by a member.
+    The second keeps a hide when that story gains more new articles than it
+    already has in one run (4 hidden + 5 new is 4/9 of the remint, but all 4
+    of the hidden cluster). A silent unhide is the worse failure for a
+    moderation hide.
 
-def inherits_hidden(article_ids: Sequence[int], hidden_ids: set[int]) -> bool:
-    """True when at least half of this remint comes from hidden clusters.
-
-    HDBSCAN inserts a new ``cluster_v2`` row every run. The in-process
-    membership hash matches only an identical article set, so a one-article
-    drift of the hidden cluster itself would publish a visible row. Half or
-    more of the new cluster's own members must be articles of a hidden
-    cluster in the previous set. A hidden story that adds or drops a member
-    still stays hidden, and so does each half of a split.
-
-    The share is of the new cluster, not of the old one. One article moving
-    from a hidden pair into a 38-article cluster is not half of that cluster,
-    so the large cluster stays visible. Treating any shared article as enough
-    hid the large cluster, and the next run then treated all of its articles
-    as hidden, so the hide grew from 2 articles to 40. An empty hidden set,
-    the default, is a no-op.
+    One article from a hidden pair joining a 38-article cluster is exactly
+    half of that pair, not more, and it is not half of the new cluster, so
+    the large cluster stays visible. An empty hidden list, the default, is a
+    no-op.
     """
+    groups = [members for members in hidden_clusters if members]
     total = len(article_ids)
-    if total == 0 or not hidden_ids:
+    if total == 0 or not groups:
         return False
+    hidden_ids = set().union(*groups)
     overlap = sum(article_id in hidden_ids for article_id in article_ids)
-    return overlap * 2 >= total
+    if overlap * 2 >= total:
+        return True
+    new_ids = set(article_ids)
+    for members in groups:
+        if len(new_ids & members) * 2 > len(members):
+            return True
+    return False
 
 
-def load_hidden_article_ids(session, cluster_ids: Sequence[int]) -> set[int]:
-    """Hidden article ids for these clusters, read from the database now."""
+def load_hidden_clusters(session, cluster_ids: Sequence[int]) -> dict[int, set[int]]:
+    """Each hidden cluster's article ids, read from the database now."""
     if not cluster_ids:
-        return set()
-    return set(session.scalars(hidden_article_ids_statement(cluster_ids)).all())
+        return {}
+    grouped: dict[int, set[int]] = {}
+    rows = session.execute(hidden_cluster_members_statement(cluster_ids)).all()
+    for cluster_id, article_id in rows:
+        grouped.setdefault(cluster_id, set()).add(article_id)
+    return grouped
+
+
+def dropped_hide_ids(
+    hidden_clusters: Mapping[int, set[int]],
+    remints: Sequence[tuple[set[int], bool]],
+) -> list[int]:
+    """Previous hidden clusters whose articles were reminted only into visible rows.
+
+    A cluster with no articles in this run is left out: nothing was reminted.
+    """
+    dropped: list[int] = []
+    for cluster_id in sorted(hidden_clusters):
+        members = hidden_clusters[cluster_id]
+        if not members:
+            continue
+        seen = False
+        preserved = False
+        for article_ids, hidden in remints:
+            if not members & article_ids:
+                continue
+            seen = True
+            if hidden:
+                preserved = True
+                break
+        if seen and not preserved:
+            dropped.append(cluster_id)
+    return dropped
 
 
 def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, ClusterV2]:
@@ -290,7 +319,7 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
     final = await enrich_cluster_payloads_with_wikimedia(final)
     # After titles and images. An operator can commit a hide during that work;
     # the rows loaded at the start of the run would still say visible.
-    hidden_ids = load_hidden_article_ids(
+    hidden_clusters = load_hidden_clusters(
         uow.session, [cluster.id for cluster in prev_clusters]
     )
     new_clusters: list[ClusterV2] = []
@@ -312,7 +341,9 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
             wiki_image_metadata=wiki_image_metadata,
             wiki_image_lookup_at=wiki_image_lookup_at,
             wiki_image_last_attempt_at=wiki_image_last_attempt_at,
-            hidden=inherits_hidden([article.id for article in cluster_articles], hidden_ids),
+            hidden=inherits_hidden(
+                [article.id for article in cluster_articles], hidden_clusters.values(),
+            ),
         )
         for article in cluster_articles:
             cluster_v2.memberships.append(
@@ -324,6 +355,14 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
                 )
             )
         new_clusters.append(cluster_v2)
+    for cluster_id in dropped_hide_ids(hidden_clusters, [
+        ({member.article_id for member in cluster.memberships}, cluster.hidden)
+        for cluster in new_clusters
+    ]):
+        logging.warning(
+            "Hide dropped for cluster %s: its articles were reminted only into visible clusters",
+            cluster_id,
+        )
     uow.clusters_v2.bulk_create(new_clusters)
 
     logging.info(f"Created {len(generated_titles)} new clusters.")
