@@ -1,10 +1,11 @@
 # Story ranking settings for the observation job (scripts.rank_clusters).
 # This file is the source of truth. The job reads it on every run.
-# A missing or invalid file fails the run and is logged.
-# Shape: {version, parameters}. Keep version in sync with the policy.
-# See config/README.md. vidik-backoffice PRs should edit only this file.
+# Shape: {version, parameters}. version recommended-v2 is the deployed policy.
+# A missing file is logged and the job falls back to hardcoded Python defaults.
+# An invalid file fails the run. See config/README.md.
+# vidik-backoffice PRs should edit only this file.
 
-version: initial-ranking-v1
+version: recommended-v2
 
 parameters:
   # Per-article contribution weights, caps, and unknown-value fallbacks.
@@ -61,7 +62,7 @@ parameters:
       gospodarstvo: 36.0
       kriminal: 12.0
       sport: 6.0
-      kultura: 72.0
+      kultura: 24.0  # recommended-v2; the Python default for this category is 72
       zdravje: 48.0
       okolje: 48.0
       lokalno: 24.0
@@ -104,10 +105,10 @@ parameters:
 
   # Base-score weights, normalized before freshness and confidence gate them.
   ranking:
-    article_contribution_weight: 1.0
+    article_contribution_weight: 0.5  # recommended-v2; Python default is 1
     coverage_weight: 1.0
-    momentum_weight: 1.0
-    semantic_importance_weight: 1.0
+    momentum_weight: 1.5  # recommended-v2; Python default is 1
+    semantic_importance_weight: 2.0  # recommended-v2; Python default is 1
     article_strength:
       authority_weight: 0.5
       data_quality_weight: 0.3

@@ -16,9 +16,15 @@ vidik-backoffice opens pull requests that edit **only** this file.
 | Format | UTF-8 YAML, one document |
 | Object shape | `{version, parameters}` |
 
-`version` is a non-empty string. Production today is `initial-ranking-v1`.
+`version` is a non-empty string. The packaged file is `recommended-v2`.
 Change it when the numbers change so a run can be told apart from the previous
-policy.
+policy. `recommended-v2` differs from the hardcoded Python defaults in four
+places: `freshness.category_half_lives_hours.kultura` is 24 hours (the Python
+default for that category is 72), `ranking.article_contribution_weight` is
+0.5 (default 1), `ranking.momentum_weight` is 1.5 (default 1), and
+`ranking.semantic_importance_weight` is 2 (default 1). Every other parameter
+matches the Python default. `cluster_confidence.weak_relation_penalty` is
+still stored and validated, and the scorer does not read it.
 
 `parameters` is an object with these sections, and no others:
 
@@ -57,11 +63,13 @@ missing or empty.
 Unknown sections are rejected. Values that fail the config models are
 rejected. `.yaml`, `.yml`, and `.json` are the only accepted suffixes.
 
-If the file is missing, unreadable, or invalid, the job logs the reason and
-exits non-zero. `agora-ranking.service` is a oneshot, so systemd marks that
-run failed. The job does not score with the Python field defaults in that
-case. A silent fallback would store scores under a version string while using
-a different policy than the file that was deployed.
+If the file is missing, the job logs an error naming the path and scores with
+the hardcoded Python defaults. `ranking_run.config.version` is then
+`initial-ranking-v1`, which is how a fallback run is told apart from
+`recommended-v2`. If the file exists but is unreadable or invalid, the job
+logs the reason and exits non-zero. `agora-ranking.service` is a oneshot, so
+systemd marks that run failed. An invalid file is not replaced with the
+Python defaults.
 
 Inside a file that does load, an omitted section or key is filled from the
 Python model and the full object is what gets stored. That fill-in is only
@@ -71,8 +79,9 @@ whole policy.
 `freshness.category_half_lives_hours` is merged with the built-in category
 map when the file is loaded. Editing a listed value changes that category.
 Adding a key adds a category. Removing a built-in key puts that category's
-Python half-life back. The committed file lists every built-in category, so
-loading it does not change the map.
+Python half-life back. The committed file lists every built-in category.
+`kultura` is 24 hours in this file; the Python default for that category is
+72 hours, so loading the file does change that one half-life.
 
 ## What a merge does
 

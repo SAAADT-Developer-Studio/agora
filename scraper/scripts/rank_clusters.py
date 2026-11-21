@@ -10,8 +10,8 @@ and finished ``source='story'`` runs that no longer have any. Cluster rows,
 story rows, and ``source='cluster'`` ranking runs are left in place.
 
 Settings come from ``scraper/config/ranking.yaml`` unless ``--config`` points
-at another YAML or JSON file. A missing or invalid file exits non-zero and
-is logged. The job does not fall back to the Python field defaults.
+at another YAML or JSON file. A missing file is logged and the run uses the
+hardcoded Python defaults. An invalid file exits non-zero and is logged.
 """
 
 import argparse
@@ -286,7 +286,8 @@ def main(argv: list[str] | None = None) -> None:
         help=(
             "YAML or JSON {version, parameters} file "
             "(default: scraper/config/ranking.yaml). "
-            "A missing or invalid file fails the run; code defaults are not used."
+            "A missing file is logged and the run falls back to hardcoded defaults. "
+            "An invalid file fails the run."
         ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview scores without any database writes")
@@ -297,17 +298,18 @@ def main(argv: list[str] | None = None) -> None:
     load_dotenv(Path(__file__).resolve().parents[2] / ".env")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from app.ranking.config_file import (
-        RankingConfigFileError, load_ranking_config_file, packaged_ranking_config_path,
+        RankingConfigFileError, load_ranking_job_config, packaged_ranking_config_path,
     )
 
     config_path = args.config if args.config is not None else packaged_ranking_config_path()
     args.config = config_path
     try:
-        config = load_ranking_config_file(config_path)
+        config = load_ranking_job_config(config_path)
     except RankingConfigFileError as exc:
         logging.error("%s", exc)
         raise SystemExit(1) from exc
-    logging.info("Loaded ranking config %s version %s", config_path, config.version)
+    if config_path.is_file():
+        logging.info("Loaded ranking config %s version %s", config_path, config.version)
     run_ranking(args, config)
 
 

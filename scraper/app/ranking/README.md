@@ -1058,8 +1058,8 @@ engine. Thresholds and weights remain initial policies requiring calibration.
 
 The pure engine remains database-independent and still scores a `RankableCluster`.
 `prepare_story()` adapts one streaming story to that contract. The story id is
-passed as `cluster_id` inside the engine and is not written back. Weights stay
-`initial-ranking-v1`. Run commands from the Agora repository root:
+passed as `cluster_id` inside the engine and is not written back. The observation
+job loads `recommended-v2` from `scraper/config/ranking.yaml`. Run commands from the Agora repository root:
 
 ```bash
 make migrate
@@ -1078,8 +1078,9 @@ variables, and needs no LLM API keys.
 `--help` needs no configuration at all. With no `--config`, the command reads
 `scraper/config/ranking.yaml`. `--config` also accepts YAML or JSON with the
 same `{version, parameters}` object. Unknown sections and invalid values are
-rejected. A missing or invalid file exits non-zero and is logged. See
-`scraper/config/README.md`.
+rejected. A missing file is logged and the run uses the hardcoded Python
+defaults (`initial-ranking-v1`). An invalid file exits non-zero and is logged.
+See `scraper/config/README.md`.
 
 This score is **strictly observation-only**. The command reads stories and
 inserts `story_rank` plus a `ranking_run` row with `source = 'story'`. It does

@@ -1,20 +1,23 @@
 """Load the ranking job's {version, parameters} file.
 
 The packaged YAML is the source of truth for the nightly observation run.
-A missing or invalid file raises ``RankingConfigFileError``. Callers must
-not substitute the Python field defaults in that case. ``resolve_ranking_config``
-still fills omitted keys inside a file that parses, and still rejects unknown
-sections and invalid values.
+``load_ranking_config_file`` raises ``RankingConfigFileError`` when a file is
+missing, unreadable, or invalid. ``load_ranking_job_config`` is what
+``scripts.rank_clusters`` calls: a missing file is logged and replaced with
+the hardcoded Python defaults, and an invalid file still raises.
+``resolve_ranking_config`` fills omitted keys inside a file that parses, and
+still rejects unknown sections and invalid values.
 """
 
 from json import JSONDecodeError, dumps, loads
+import logging
 from pathlib import Path
 
 from pydantic import ValidationError
 import yaml
 
 from app.ranking.contracts import RankingConfig
-from app.ranking.persistence import CONFIG_SECTIONS, resolve_ranking_config
+from app.ranking.persistence import CONFIG_SECTIONS, DEFAULT_CONFIG_VERSION, resolve_ranking_config
 
 
 # Image root is /app and the Dockerfile copies the scraper tree there.
@@ -23,7 +26,7 @@ CONTAINER_RANKING_CONFIG_PATH = Path("/app/scraper/config/ranking.yaml")
 
 
 class RankingConfigFileError(ValueError):
-    """The ranking file cannot be used. Callers must not substitute defaults."""
+    """A ranking file cannot be used. Invalid files are not replaced with defaults."""
 
 
 def packaged_ranking_config_path() -> Path:
@@ -55,7 +58,7 @@ def ranking_config_json_schema() -> dict:
                 "minLength": 1,
                 "description": (
                     "Label stored on ranking_run.config. "
-                    "The current production value is initial-ranking-v1."
+                    "The packaged file's version is recommended-v2."
                 ),
             },
             "parameters": {
@@ -70,6 +73,26 @@ def ranking_config_json_schema() -> dict:
             },
         },
     }
+
+
+def load_ranking_job_config(path: Path) -> RankingConfig:
+    """Config for one ranking run.
+
+    A path that is not a file is logged at error and replaced with the
+    hardcoded Python defaults (version ``initial-ranking-v1``). An existing
+    file that cannot be parsed or validated still raises
+    ``RankingConfigFileError``.
+    """
+    path = Path(path)
+    if not path.is_file():
+        logging.error(
+            "Ranking config file %s is missing. Falling back to hardcoded Python "
+            "defaults (version %s). This run will not use the deployed ranking.yaml policy.",
+            path,
+            DEFAULT_CONFIG_VERSION,
+        )
+        return resolve_ranking_config(RankingConfig(version=DEFAULT_CONFIG_VERSION))
+    return load_ranking_config_file(path)
 
 
 def load_ranking_config_file(path: Path) -> RankingConfig:
@@ -94,7 +117,7 @@ def load_ranking_config_file(path: Path) -> RankingConfig:
 def _reject(path: Path, reason: str) -> RankingConfigFileError:
     return RankingConfigFileError(
         f"Ranking config file {path} cannot be used ({reason}). "
-        "The ranking job will not fall back to code defaults."
+        "Code defaults are not used for an unreadable or invalid file."
     )
 
 

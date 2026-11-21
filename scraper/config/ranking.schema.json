@@ -13,7 +13,7 @@
     "version": {
       "type": "string",
       "minLength": 1,
-      "description": "Label stored on ranking_run.config. The current production value is initial-ranking-v1."
+      "description": "Label stored on ranking_run.config. The packaged file's version is recommended-v2."
     },
     "parameters": {
       "type": "object",
