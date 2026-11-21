@@ -1059,7 +1059,7 @@ engine. Thresholds and weights remain initial policies requiring calibration.
 The pure engine remains database-independent and still scores a `RankableCluster`.
 `prepare_story()` adapts one streaming story to that contract. The story id is
 passed as `cluster_id` inside the engine and is not written back. The observation
-job loads `recommended-v2` from `scraper/config/ranking.yaml`. Run commands from the Agora repository root:
+job loads `recommended-v3` from `scraper/config/ranking.yaml`. Run commands from the Agora repository root:
 
 ```bash
 make migrate

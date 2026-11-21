@@ -16,12 +16,13 @@ vidik-backoffice opens pull requests that edit **only** this file.
 | Format | UTF-8 YAML, one document |
 | Object shape | `{version, parameters}` |
 
-`version` is a non-empty string. The packaged file is `recommended-v2`.
+`version` is a non-empty string. The packaged file is `recommended-v3`.
 Change it when the numbers change so a run can be told apart from the previous
-policy. `recommended-v2` differs from the hardcoded Python defaults in four
+policy. `recommended-v3` differs from the hardcoded Python defaults in five
 places: `freshness.category_half_lives_hours.kultura` is 24 hours (the Python
 default for that category is 72), `ranking.article_contribution_weight` is
-0.5 (default 1), `ranking.momentum_weight` is 1.5 (default 1), and
+0.5 (default 1), `ranking.coverage_weight` is 2 (default 1),
+`ranking.momentum_weight` is 0.75 (default 1), and
 `ranking.semantic_importance_weight` is 2 (default 1). Every other parameter
 matches the Python default. `cluster_confidence.weak_relation_penalty` is
 still stored and validated, and the scorer does not read it.
@@ -66,7 +67,7 @@ rejected. `.yaml`, `.yml`, and `.json` are the only accepted suffixes.
 If the file is missing, the job logs an error naming the path and scores with
 the hardcoded Python defaults. `ranking_run.config.version` is then
 `initial-ranking-v1`, which is how a fallback run is told apart from
-`recommended-v2`. If the file exists but is unreadable or invalid, the job
+`recommended-v3`. If the file exists but is unreadable or invalid, the job
 logs the reason and exits non-zero. `agora-ranking.service` is a oneshot, so
 systemd marks that run failed. An invalid file is not replaced with the
 Python defaults.

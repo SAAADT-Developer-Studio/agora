@@ -208,7 +208,7 @@ def test_command_dry_run_then_saves_story_pages_and_reruns(db_engine, monkeypatc
         assert run.window_days == 14
         assert run.failed_story_id is None
         assert run.algorithm_version == ranks[2].rank_version
-        assert run.config["parameters"]["ranking"]["coverage_weight"] == 1
+        assert run.config["parameters"]["ranking"]["coverage_weight"] == 2
     main(["--batch-size", "2"])
     with Session(db_engine) as session:
         runs = session.scalars(select(RankingRun).order_by(RankingRun.id)).all()
