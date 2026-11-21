@@ -2,6 +2,7 @@ import io
 import json
 import urllib.error
 import urllib.request
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -44,10 +45,15 @@ def _excerpt(
     )
 
 
-def _response(title: str = HEADLINE, bullets: list[dict] | None = None) -> str:
+LEDE = "Vlada je 9. oktobra v Ljubljani sklenila, da minimalna plača januarja zraste za šest odstotkov."
+
+
+def _response(
+    title: str = HEADLINE, bullets: list[dict] | None = None, lede: object = LEDE
+) -> str:
     if bullets is None:
         bullets = [{"text": FACT, "sources": [1], "previous": None}]
-    return json.dumps({"title": title, "bullets": bullets})
+    return json.dumps({"title": title, "lede": lede, "bullets": bullets})
 
 
 PREVIOUS = Brief(
@@ -72,9 +78,10 @@ def test_prompt_includes_lead_and_summary_and_skips_blanks() -> None:
     assert "Never name outlets" in text
     assert "Set `previous` to null on every bullet." in text
     assert (
-        "1. Title: Prvi naslov\n2. Title: Drugi naslov\n   Lead: Vodilo\n   Summary: Povzetek"
-        in text
-    )
+        "1. [Sat 2026-10-10 00:00] Title: Prvi naslov\n2. [Sat 2026-10-10 01:00] Title: Drugi naslov\n"
+        "   Lead: Vodilo\n   Summary: Povzetek"
+    ) in text
+    assert "the most recent article is right" in text
     assert "Lead:  " not in text
 
 
@@ -144,6 +151,7 @@ def test_parse_brief_maps_article_numbers_to_ids() -> None:
             Bullet(text="Sindikati so dvig označili za premajhen.", article_ids=()),
         ),
         lead_article_id=7,
+        lede=LEDE,
     )
 
 
@@ -210,11 +218,31 @@ def test_parse_brief_rejects_unusable_output(raw: str) -> None:
         (PREVIOUS, 20, 1, True),
         (PREVIOUS, 40, 1, True),
         (PREVIOUS, 21, 1, False),
+        (PREVIOUS, 60, 1, True),
+        (PREVIOUS, 61, 1, False),
         (PREVIOUS, 2, 9, True),
     ],
 )
 def test_should_refresh(previous, count, lead, expected) -> None:
     assert should_refresh(previous, member_count=count, lead_article_id=lead) is expected
+
+
+def test_stale_summary_refreshes_once_newer_articles_arrive() -> None:
+    written = datetime(2026, 10, 10, 12, tzinfo=timezone.utc)
+    previous = replace(PREVIOUS, created_at=written)
+
+    def check(newest_hours: float, now_hours: float) -> bool:
+        return should_refresh(
+            previous,
+            member_count=41,
+            lead_article_id=1,
+            newest_published_at=written + timedelta(hours=newest_hours),
+            now=written + timedelta(hours=now_hours),
+        )
+
+    assert check(newest_hours=1, now_hours=7) is True
+    assert check(newest_hours=1, now_hours=5) is False
+    assert check(newest_hours=-1, now_hours=7) is False
 
 
 def test_new_story_gets_a_summary() -> None:
@@ -228,7 +256,10 @@ def test_new_story_gets_a_summary() -> None:
 
     assert prompts and "Prvi naslov" in prompts[0]
     assert brief == Brief(
-        title=HEADLINE, bullets=(Bullet(text=FACT, article_ids=(7,)),), lead_article_id=7
+        title=HEADLINE,
+        bullets=(Bullet(text=FACT, article_ids=(7,)),),
+        lead_article_id=7,
+        lede=LEDE,
     )
 
 
@@ -337,3 +368,29 @@ def test_http_error_does_not_escape_refresh(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
     assert refresh_brief([_excerpt(1, "Prvi naslov")], None) is None
+
+
+def test_parse_brief_reads_the_lede() -> None:
+    brief = parse_brief(_response(), [_excerpt(1, "Prvi")])
+
+    assert brief is not None
+    assert brief.lede == LEDE
+
+
+@pytest.mark.parametrize("lede", [None, "", "Prekratko.", "x" * 401, 7])
+def test_unusable_lede_keeps_the_rest(lede: object) -> None:
+    brief = parse_brief(_response(lede=lede), [_excerpt(1, "Prvi")])
+
+    assert brief is not None
+    assert brief.lede is None
+    assert brief.title == HEADLINE
+
+
+def test_prompt_asks_for_a_dated_lede_and_shows_the_previous_one() -> None:
+    previous = replace(PREVIOUS, lede=LEDE)
+
+    prompt = build_prompt([_excerpt(1, "Prvi")], previous)
+
+    assert "Lede:" in prompt
+    assert "Never write relative dates" in prompt
+    assert f"Lede: {LEDE}" in prompt

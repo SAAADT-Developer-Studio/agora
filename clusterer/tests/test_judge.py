@@ -8,12 +8,14 @@ import pytest
 
 import clusterer.judge as judge
 from clusterer.assign import PromptArticle, StoryContext
+from clusterer.assign import Verdict
 from clusterer.judge import (
     build_merge_prompt,
     build_prompt,
+    choose_story,
     parse_relation,
-    same_happening,
-    same_story,
+    parse_verdict,
+    story_relation,
 )
 
 _DAY = datetime(2026, 10, 11, 9, tzinfo=timezone.utc)
@@ -24,22 +26,26 @@ _STORY = StoryContext(
 )
 
 
-def _reply(relation: str) -> io.BytesIO:
-    payload = {"choices": [{"message": {"content": json.dumps({"relation": relation})}}]}
+def _reply(relation: str, story: int = 1) -> io.BytesIO:
+    content = json.dumps({"story": story, "relation": relation})
+    payload = {"choices": [{"message": {"content": content}}], "usage": {"cost": 0.0001}}
     return io.BytesIO(json.dumps(payload).encode())
 
 
-def test_prompt_shows_brief_dated_members_and_omits_blank_summaries() -> None:
-    text = build_prompt(PromptArticle("Title", "  ", _DAY), _STORY)
+def test_prompt_numbers_candidate_stories_with_brief_and_dates() -> None:
+    other = StoryContext(headline=None, bullets=(), members=(PromptArticle("C", None),))
+
+    text = build_prompt(PromptArticle("Title", "  ", _DAY), [_STORY, other])
 
     assert text.startswith("You group Slovenian news into stories.\n")
     assert "opinion columns" in text
     assert (
-        "Story:\nHeadline: Referendumi 11. oktobra\nKey points:\n- Udeležba 54 %\n"
+        "Story 1:\nHeadline: Referendumi 11. oktobra\nKey points:\n- Udeležba 54 %\n"
         "- Zakon zavrnjen\nArticles:\n1. [2026-10-11] Title: A\n2. Title: B\n"
-        "   Summary: sum\n\nNew article:\n[2026-10-11] Title: Title\n"
+        "   Summary: sum\n\nStory 2:\nArticles:\n1. Title: C\n\n"
+        "New article:\n[2026-10-11] Title: Title\n"
     ) in text
-    assert text.endswith("\nHow does the new article relate to the story?")
+    assert "answer story 0" in text
 
 
 def test_merge_prompt_shows_both_stories() -> None:
@@ -64,23 +70,41 @@ def test_parse_relation_rejects_unknown() -> None:
         parse_relation('{"same": true}')
 
 
-@pytest.mark.parametrize(
-    ("relation", "joins", "merges"),
-    [
-        ("same_event", True, True),
-        ("development", True, False),
-        ("related_topic", False, False),
-        ("different", False, False),
-    ],
-)
-def test_relations_map_to_join_and_merge(
-    monkeypatch: pytest.MonkeyPatch, relation: str, joins: bool, merges: bool
-) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "primary")
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _reply(relation))
+def test_parse_verdict_maps_story_numbers_to_candidates() -> None:
+    assert parse_verdict('{"story": 2, "relation": "development"}', 3) == Verdict(1, "development")
+    assert parse_verdict('{"story": 0, "relation": "different"}', 3) == Verdict(None, "different")
 
-    assert same_happening(PromptArticle("t", "s"), _STORY) is joins
-    assert same_story(_STORY, _STORY) is merges
+
+def test_parse_verdict_treats_none_as_not_joining() -> None:
+    verdict = parse_verdict('{"story": 0, "relation": "same_event"}', 2)
+
+    assert verdict == Verdict(None, "related_topic")
+
+
+@pytest.mark.parametrize("content", ['{"story": 3, "relation": "same_event"}', '{"story": -1, "relation": "different"}', '{"relation": "same_event"}'])
+def test_parse_verdict_rejects_out_of_range(content: str) -> None:
+    with pytest.raises(ValueError):
+        parse_verdict(content, 2)
+
+
+def test_choose_story_calls_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "primary")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _reply("development", 2))
+
+    verdict = choose_story(PromptArticle("t", "s"), [_STORY, _STORY])
+
+    assert verdict == Verdict(1, "development")
+
+
+def test_story_relation_uses_the_given_completer() -> None:
+    prompts: list[str] = []
+
+    def complete(prompt: str) -> str:
+        prompts.append(prompt)
+        return '{"relation": "same_event"}'
+
+    assert story_relation(_STORY, _STORY, complete=complete) == "same_event"
+    assert prompts[0].endswith("How does story B relate to story A?")
 
 
 def test_missing_key_seeds_without_calling(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,8 +116,8 @@ def test_missing_key_seeds_without_calling(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
-    assert same_happening(PromptArticle("t", "s"), _STORY) is False
-    assert same_story(_STORY, _STORY) is False
+    assert choose_story(PromptArticle("t", "s"), [_STORY]) is None
+    assert story_relation(_STORY, _STORY) is None
 
 
 def test_credit_error_uses_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,7 +135,7 @@ def test_credit_error_uses_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
-    assert same_happening(PromptArticle("t", "s"), _STORY) is True
+    assert choose_story(PromptArticle("t", "s"), [_STORY]) == Verdict(0, "same_event")
     assert calls == ["Bearer primary", "Bearer fallback"]
 
 
@@ -129,5 +153,5 @@ def test_other_http_error_does_not_use_fallback(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
 
     with pytest.raises(urllib.error.HTTPError):
-        same_happening(PromptArticle("t", None), _STORY)
+        choose_story(PromptArticle("t", None), [_STORY])
     assert calls == ["Bearer primary"]

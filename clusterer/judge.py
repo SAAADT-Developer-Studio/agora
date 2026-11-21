@@ -1,22 +1,25 @@
 import json
 import logging
-import os
-import urllib.error
-import urllib.request
+from collections.abc import Sequence
 
-from .assign import PromptArticle, StoryContext
+from . import llm
+from .assign import (
+    DEVELOPMENT,
+    DIFFERENT,
+    JOIN_RELATIONS,
+    RELATED_TOPIC,
+    RELATIONS,
+    SAME_EVENT,
+    PromptArticle,
+    StoryContext,
+    Verdict,
+)
 
-MODEL = "deepseek/deepseek-v4-flash"
-_TIMEOUT_SECONDS = 30
+MODEL = llm.MODEL
 
-SAME_EVENT = "same_event"
-DEVELOPMENT = "development"
-RELATED_TOPIC = "related_topic"
-DIFFERENT = "different"
-RELATIONS = (SAME_EVENT, DEVELOPMENT, RELATED_TOPIC, DIFFERENT)
-# An article joins on either; two stories merge only when they are the same event.
-JOIN_RELATIONS = frozenset({SAME_EVENT, DEVELOPMENT})
-MERGE_RELATIONS = frozenset({SAME_EVENT})
+# Two stories merge on the same relations an article joins on: a development
+# that seeded its own story belongs with the story it develops.
+MERGE_RELATIONS = JOIN_RELATIONS
 
 _DEFINITIONS = [
     "You group Slovenian news into stories.",
@@ -35,14 +38,56 @@ _DEFINITIONS = [
     f"- {DIFFERENT}: unrelated.",
 ]
 
+CHOICE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "story_choice",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "story": {"type": "integer"},
+                "relation": {"type": "string", "enum": list(RELATIONS)},
+            },
+            "required": ["story", "relation"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+RELATION_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "story_relation",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"relation": {"type": "string", "enum": list(RELATIONS)}},
+            "required": ["relation"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 logger = logging.getLogger(__name__)
 _missing_key_logged = False
 
 
-def build_prompt(article: PromptArticle, story: StoryContext) -> str:
-    lines = [*_DEFINITIONS, "", "Story:", *_story_lines(story), "", "New article:"]
+def build_prompt(article: PromptArticle, stories: Sequence[StoryContext]) -> str:
+    lines = [*_DEFINITIONS, ""]
+    for number, story in enumerate(stories, start=1):
+        lines.extend([f"Story {number}:", *_story_lines(story), ""])
+    lines.append("New article:")
     lines.extend(_article_lines(article))
-    lines.extend(["", "How does the new article relate to the story?"])
+    lines.extend(
+        [
+            "",
+            "Which story does the new article belong to? Answer with that story's number "
+            "and the article's relation to it. When none of the stories is the same "
+            "happening or a direct development of it, answer story 0 with the closest "
+            "relation (related_topic or different).",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -85,68 +130,47 @@ def parse_relation(content: str) -> str:
     return relation
 
 
-def same_happening(article: PromptArticle, story: StoryContext) -> bool:
-    relation = _ask(build_prompt(article, story))
-    return relation in JOIN_RELATIONS
+def parse_verdict(content: str, candidates: int) -> Verdict:
+    relation = parse_relation(content)
+    story = json.loads(content).get("story")
+    if not isinstance(story, int) or isinstance(story, bool) or not 0 <= story <= candidates:
+        raise ValueError(f"expected story 0..{candidates}, got {content!r}")
+    if story == 0:
+        # "None of them" with a joining relation is self-contradictory; trust the 0.
+        return Verdict(None, relation if relation not in JOIN_RELATIONS else RELATED_TOPIC)
+    return Verdict(story - 1, relation)
 
 
-def same_story(first: StoryContext, second: StoryContext) -> bool:
-    relation = _ask(build_merge_prompt(first, second))
-    return relation in MERGE_RELATIONS
+def choose_story(
+    article: PromptArticle,
+    stories: Sequence[StoryContext],
+    *,
+    complete: llm.Complete | None = None,
+) -> Verdict | None:
+    """Which candidate the article belongs to, or None without an API key."""
+    content = _ask(build_prompt(article, stories), CHOICE_FORMAT, complete)
+    return None if content is None else parse_verdict(content, len(stories))
 
 
-def _ask(prompt: str) -> str | None:
-    """The judge's relation, or None without an API key."""
+def story_relation(
+    first: StoryContext, second: StoryContext, *, complete: llm.Complete | None = None
+) -> str | None:
+    """How story B relates to story A, or None without an API key."""
+    content = _ask(build_merge_prompt(first, second), RELATION_FORMAT, complete)
+    return None if content is None else parse_relation(content)
+
+
+def default_complete(response_format: dict) -> llm.Complete:
+    return lambda prompt: llm.chat(prompt, response_format=response_format).content
+
+
+def _ask(prompt: str, response_format: dict, complete: llm.Complete | None) -> str | None:
     global _missing_key_logged
-    primary = os.getenv("OPENROUTER_API_KEY") or None
-    if not primary:
+    call = complete if complete is not None else default_complete(response_format)
+    try:
+        return call(prompt)
+    except llm.MissingKey:
         if not _missing_key_logged:
             logger.warning("OPENROUTER_API_KEY missing; gray-band articles will seed")
             _missing_key_logged = True
         return None
-    try:
-        return _complete(primary, prompt)
-    except urllib.error.HTTPError as exc:
-        fallback = os.getenv("OPENROUTER_FALLBACK_API_KEY") or os.getenv(
-            "OPENROUTER_API_KEY_FALLBACK"
-        )
-        if exc.code == 402 and fallback:
-            return _complete(fallback, prompt)
-        raise
-
-
-def _complete(api_key: str, prompt: str) -> str:
-    url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-    body = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "reasoning": {"enabled": False},
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "story_relation",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {"relation": {"type": "string", "enum": list(RELATIONS)}},
-                    "required": ["relation"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-    }
-    request = urllib.request.Request(
-        f"{url}/chat/completions",
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
-        payload = json.loads(response.read())
-    content = payload["choices"][0]["message"]["content"]
-    if not isinstance(content, str):
-        raise ValueError(f"expected string content, got {content!r}")
-    return parse_relation(content)

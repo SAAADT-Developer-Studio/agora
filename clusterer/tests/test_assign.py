@@ -1,13 +1,18 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import math
 
 from clusterer.assign import (
     COSINE,
+    JUDGE_CANDIDATES,
+    DEVELOPMENT_FLOOR,
+    SAME_EVENT_FLOOR,
+    Verdict,
     JOIN_THRESHOLD,
     LLM,
     LLM_FLOOR,
     SEED,
+    STORY_SPAN,
     NeighborIndex,
     PromptArticle,
     StoryContext,
@@ -113,10 +118,10 @@ def test_gray_band_yes_joins_as_llm() -> None:
     index.add(1, 10, [1.0, 0.0], title="Nearest", summary="Near", published_at=_at(1), is_seed=True)
     seen: dict[str, object] = {}
 
-    def judge(article: PromptArticle, story: StoryContext) -> bool:
+    def judge(article: PromptArticle, stories: list[StoryContext]) -> Verdict:
         seen["article"] = article
-        seen["story"] = story
-        return True
+        seen["story"] = stories[0]
+        return Verdict(0, "same_event")
 
     assignment = decide(
         _toward(0.74), index, title="New", summary="Body", published_at=_at(2), judge=judge
@@ -127,6 +132,7 @@ def test_gray_band_yes_joins_as_llm() -> None:
     assert assignment.nearest_article_id == 1
     assert assignment.similarity is not None
     assert abs(assignment.similarity - 0.74) < 1e-9
+    assert assignment.relation == "same_event"
     assert seen == {
         "article": PromptArticle("New", "Body", _at(2)),
         "story": StoryContext(
@@ -144,14 +150,15 @@ def test_close_to_one_member_but_far_from_story_goes_to_judge() -> None:
         index.add(article_id, 10, [0.0, 0.0, 1.0])
     calls: list[object] = []
 
-    def judge(*args: object) -> bool:
+    def judge(*args: object) -> Verdict:
         calls.append(args)
-        return False
+        return Verdict(None, "related_topic")
 
     assignment = decide([0.866, 0.5, 0.0], index, judge=judge)
 
     assert len(calls) == 1
     assert assignment.method == SEED
+    assert assignment.relation == "related_topic"
 
 
 def test_cosine_join_records_story_similarity() -> None:
@@ -173,17 +180,18 @@ def test_judge_sees_story_closest_to_its_centroid() -> None:
     index.add(2, 10, [0.0, 0.0, 1.0], title="ten-far")
     index.add(3, 20, [0.72, -0.694, 0.0], title="twenty-a")
     index.add(4, 20, [0.72, -0.694, 0.0], title="twenty-b")
-    seen: list[StoryContext] = []
+    seen: list[list[StoryContext]] = []
 
-    def judge(_article: PromptArticle, story: StoryContext) -> bool:
-        seen.append(story)
-        return True
+    def judge(_article: PromptArticle, stories: list[StoryContext]) -> Verdict:
+        seen.append(stories)
+        return Verdict(0, "same_event")
 
     assignment = decide([1.0, 0.0, 0.0], index, judge=judge)
 
     assert assignment.story_id == 20
     assert assignment.method == LLM
-    assert {member.title for member in seen[0].members} == {"twenty-a", "twenty-b"}
+    assert {member.title for member in seen[0][0].members} == {"twenty-a", "twenty-b"}
+    assert {member.title for member in seen[0][1].members} == {"ten-near", "ten-far"}
 
 
 def test_story_context_includes_brief_and_fewer_members() -> None:
@@ -203,7 +211,9 @@ def test_gray_band_no_seeds() -> None:
     index = NeighborIndex()
     index.add(1, 10, [1.0, 0.0], title="Nearest", summary="Near", is_seed=True)
 
-    assignment = decide(_toward(0.74), index, title="New", summary="Body", judge=lambda *_: False)
+    assignment = decide(
+        _toward(0.74), index, title="New", summary="Body", judge=lambda *_: Verdict(None, "different")
+    )
 
     assert assignment.story_id is None
     assert assignment.method == SEED
@@ -281,3 +291,135 @@ def test_move_relabels_members_and_centroid() -> None:
     assert index.size(20) == 0
     assert [candidate.story_id for candidate in index.candidates(_unit(2))] == [10]
     assert index.story_context(20).headline is None
+
+
+def _story_of(index: NeighborIndex, story_id: int, degrees: float, first_id: int) -> None:
+    for offset in range(3):
+        index.add(first_id + offset, story_id, _unit(degrees), title=f"{story_id}-{offset}")
+
+
+def test_judge_can_pick_the_runner_up_story() -> None:
+    # Story 20 is a hair further by centroid; the judge sees both and picks it.
+    index = NeighborIndex()
+    _story_of(index, 10, 44, 1)
+    _story_of(index, 20, -45, 10)
+
+    def judge(_article: PromptArticle, stories: list[StoryContext]) -> Verdict:
+        assert [s.members[0].title.split("-")[0] for s in stories] == ["10", "20"]
+        return Verdict(1, "same_event")
+
+    assignment = decide(_unit(0), index, judge=judge)
+
+    assert assignment.story_id == 20
+    assert assignment.method == LLM
+
+
+def test_judge_sees_at_most_a_few_stories() -> None:
+    index = NeighborIndex()
+    for story in range(JUDGE_CANDIDATES + 2):
+        index.add(story, story, _unit(42 + story))
+    seen: list[int] = []
+
+    def judge(_article: PromptArticle, stories: list[StoryContext]) -> Verdict:
+        seen.append(len(stories))
+        return Verdict(None, "different")
+
+    decide(_unit(0), index, judge=judge)
+
+    assert seen == [JUDGE_CANDIDATES]
+
+
+def test_development_far_from_the_story_seeds() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, [1.0, 0.0])
+    between = (SAME_EVENT_FLOOR + DEVELOPMENT_FLOOR) / 2
+
+    development = decide(_toward(between), index, judge=lambda *_: Verdict(0, "development"))
+    same = decide(_toward(between), index, judge=lambda *_: Verdict(0, "same_event"))
+
+    assert development.method == SEED
+    assert development.relation == "development"
+    assert same.method == LLM
+
+
+def test_same_event_far_from_the_story_seeds() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, [1.0, 0.0])
+
+    same = decide(
+        _toward(SAME_EVENT_FLOOR - 0.02), index, judge=lambda *_: Verdict(0, "same_event")
+    )
+
+    assert same.method == SEED
+    assert same.relation == "same_event"
+
+
+def test_judge_unavailable_seeds() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, [1.0, 0.0])
+
+    assert decide(_toward(0.74), index, judge=lambda *_: None).method == SEED
+
+
+def test_merge_candidates_match_a_big_story_by_its_members() -> None:
+    # Story 10 has drifted over two developments; its centroid is far from
+    # story 20, but story 20 duplicates one of them.
+    index = NeighborIndex()
+    for article_id in range(1, 5):
+        index.add(article_id, 10, [1.0, 0.0, 0.0])
+    for article_id in range(5, 9):
+        index.add(article_id, 10, [0.0, 0.0, 1.0])
+    index.add(20, 20, [0.98, 0.2, 0.0])
+    index.add(21, 20, [0.98, -0.2, 0.0])
+
+    pairs = index.merge_candidates(changed={20})
+
+    assert [(p.keep_story_id, p.drop_story_id) for p in pairs] == [(10, 20)]
+    assert pairs[0].similarity > 0.95
+
+
+T0 = datetime(2026, 10, 11, 8, tzinfo=timezone.utc)
+
+
+def test_story_stops_taking_articles_after_its_span() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0), published_at=T0)
+    index.add(2, 10, _unit(0), published_at=T0 + timedelta(days=2))
+
+    inside = decide(_unit(0), index, published_at=T0 + STORY_SPAN)
+    after = decide(_unit(0), index, published_at=T0 + STORY_SPAN + timedelta(minutes=1))
+
+    assert inside.story_id == 10
+    assert after.story_id is None
+    assert after.method == SEED
+
+
+def test_story_span_counts_members_outside_the_window() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0), published_at=T0 + timedelta(days=2))
+    index.set_started(10, T0 - timedelta(days=2))
+
+    assert decide(_unit(0), index, published_at=T0 + timedelta(days=2)).story_id is None
+
+
+def test_closed_story_takes_no_merges() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0), published_at=T0)
+    index.add(2, 10, _unit(2), published_at=T0 + timedelta(days=2))
+    index.add(3, 20, _unit(1), published_at=T0 + timedelta(days=2))
+
+    open_pairs = index.merge_candidates({20}, at=T0 + timedelta(days=2))
+    closed_pairs = index.merge_candidates({20}, at=T0 + timedelta(days=4))
+
+    assert [(p.keep_story_id, p.drop_story_id) for p in open_pairs] == [(10, 20)]
+    assert closed_pairs == []
+
+
+def test_merged_story_keeps_the_earlier_start() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, _unit(0), published_at=T0 + timedelta(days=2))
+    index.add(2, 20, _unit(0), published_at=T0)
+
+    index.move(20, 10)
+
+    assert not index.is_open(10, T0 + timedelta(days=4))

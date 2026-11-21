@@ -320,6 +320,18 @@ class StoryRepository:
     def add_membership(self, membership: StoryArticle) -> None:
         self.session.add(membership)
 
+    def first_published(self, story_ids: list[int]) -> dict[int, datetime]:
+        """Each story's earliest member publication time, including members outside any window."""
+        if not story_ids:
+            return {}
+        stmt = (
+            select(StoryArticle.story_id, func.min(Article.published_at))
+            .join(Article, Article.id == StoryArticle.article_id)
+            .where(StoryArticle.story_id.in_(story_ids))
+            .group_by(StoryArticle.story_id)
+        )
+        return dict(self.session.execute(stmt).tuples().all())
+
     def member_texts(self, story_id: int) -> Sequence[StoryMemberText]:
         """Every article in the story, earliest published first."""
         stmt = (

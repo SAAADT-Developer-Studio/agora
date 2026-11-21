@@ -1,5 +1,6 @@
 .PHONY: scraper scraper-dev test run migrate migrate-rev migrate-check \
-	rank-clusters export-ranking-sample export-articles sync-images clusterer clusterer-dev
+	rank-clusters export-ranking-sample export-articles sync-images clusterer clusterer-dev \
+	replay-export replay
 
 # All targets assume the repo root. One .venv lives here.
 
@@ -14,6 +15,15 @@ clusterer:
 
 clusterer-dev:
 	uv sync --package clusterer --group test
+
+# Replay the clusterer over past articles. See clusterer/replay.py.
+#   make replay-export start=2026-10-19T00:00 hours=24 name=oct19
+#   make replay name=oct19 [ARGS="--no-llm"]
+replay-export:
+	uv run --package clusterer python -m clusterer.replay export --start "$(start)" --hours "$(or $(hours),24)" --out "$(name)"
+
+replay:
+	uv run --package clusterer python -m clusterer.replay run "$(name)" $(ARGS)
 
 test:
 	uv run --package scraper --directory scraper pytest
