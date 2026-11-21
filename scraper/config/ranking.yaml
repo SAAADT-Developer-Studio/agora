@@ -1,11 +1,11 @@
 # Story ranking settings for the observation job (scripts.rank_clusters).
 # This file is the source of truth. The job reads it on every run.
-# Shape: {version, parameters}. version recommended-v2 is the deployed policy.
+# Shape: {version, parameters}. version recommended-v3 is the deployed policy.
 # A missing file is logged and the job falls back to hardcoded Python defaults.
 # An invalid file fails the run. See config/README.md.
 # vidik-backoffice PRs should edit only this file.
 
-version: recommended-v2
+version: recommended-v3
 
 parameters:
   # Per-article contribution weights, caps, and unknown-value fallbacks.
@@ -106,8 +106,8 @@ parameters:
   # Base-score weights, normalized before freshness and confidence gate them.
   ranking:
     article_contribution_weight: 0.5  # recommended-v2; Python default is 1
-    coverage_weight: 1.0
-    momentum_weight: 1.5  # recommended-v2; Python default is 1
+    coverage_weight: 2.0  # recommended-v3; Python default is 1
+    momentum_weight: 0.75  # recommended-v3; Python default is 1
     semantic_importance_weight: 2.0  # recommended-v2; Python default is 1
     article_strength:
       authority_weight: 0.5

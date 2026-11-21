@@ -58,7 +58,7 @@ def ranking_config_json_schema() -> dict:
                 "minLength": 1,
                 "description": (
                     "Label stored on ranking_run.config. "
-                    "The packaged file's version is recommended-v2."
+                    "The packaged file's version is recommended-v3."
                 ),
             },
             "parameters": {

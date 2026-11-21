@@ -25,8 +25,8 @@ def _parameter_bytes(config: RankingConfig) -> bytes:
     return dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
 
 
-# Exact recommended-v2 object. Whole numbers are ints here; the models store floats.
-RECOMMENDED_V2_PARAMETERS = {
+# Exact recommended-v3 object. Whole numbers are ints here; the models store floats.
+RECOMMENDED_V3_PARAMETERS = {
     "article_contribution": {
         "authority_weight": 0.25, "originality_weight": 0.2, "novelty_weight": 0.3,
         "quality_weight": 0.15, "source_weight": 0.1, "freshness_half_life_hours": 24,
@@ -73,7 +73,7 @@ RECOMMENDED_V2_PARAMETERS = {
         "gate_power": 1,
     },
     "ranking": {
-        "article_contribution_weight": 0.5, "coverage_weight": 1, "momentum_weight": 1.5,
+        "article_contribution_weight": 0.5, "coverage_weight": 2, "momentum_weight": 0.75,
         "semantic_importance_weight": 2,
         "article_strength": {
             "authority_weight": 0.5, "data_quality_weight": 0.3, "source_weight": 0.2,
@@ -97,15 +97,15 @@ def _leaf_diffs(left, right, prefix=""):
     return []
 
 
-def test_committed_yaml_is_recommended_v2_and_round_trips():
+def test_committed_yaml_is_recommended_v3_and_round_trips():
     path = packaged_ranking_config_path()
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     expected = resolve_ranking_config(RankingConfig(
-        version="recommended-v2", parameters=RECOMMENDED_V2_PARAMETERS,
+        version="recommended-v3", parameters=RECOMMENDED_V3_PARAMETERS,
     ))
-    assert raw["version"] == "recommended-v2"
+    assert raw["version"] == "recommended-v3"
     loaded = load_ranking_config_file(path)
-    assert loaded.version == "recommended-v2"
+    assert loaded.version == "recommended-v3"
     assert loaded.model_dump(mode="json") == expected.model_dump(mode="json")
     # Every parameter is written in the file. Loading does not fill a different value.
     assert raw["parameters"] == loaded.parameters
@@ -113,12 +113,14 @@ def test_committed_yaml_is_recommended_v2_and_round_trips():
     assert _leaf_diffs(defaults.parameters, loaded.parameters) == [
         "freshness.category_half_lives_hours.kultura",
         "ranking.article_contribution_weight",
+        "ranking.coverage_weight",
         "ranking.momentum_weight",
         "ranking.semantic_importance_weight",
     ]
     assert loaded.parameters["freshness"]["category_half_lives_hours"]["kultura"] == 24.0
     assert loaded.parameters["ranking"]["article_contribution_weight"] == 0.5
-    assert loaded.parameters["ranking"]["momentum_weight"] == 1.5
+    assert loaded.parameters["ranking"]["coverage_weight"] == 2.0
+    assert loaded.parameters["ranking"]["momentum_weight"] == 0.75
     assert loaded.parameters["ranking"]["semantic_importance_weight"] == 2.0
     # JSON and YAML dumps of the resolved object load back to the same parameters.
     blob = loaded.model_dump(mode="json")
@@ -292,11 +294,13 @@ def test_main_defaults_to_the_packaged_yaml(monkeypatch, caplog):
     packaged = load_ranking_config_file(packaged_ranking_config_path())
     assert seen["args"].config == packaged_ranking_config_path()
     assert seen["config"].model_dump_json() == packaged.model_dump_json()
-    assert seen["config"].version == "recommended-v2"
+    assert seen["config"].version == "recommended-v3"
+    assert seen["config"].parameters["ranking"]["coverage_weight"] == 2.0
+    assert seen["config"].parameters["ranking"]["momentum_weight"] == 0.75
     assert seen["config"].parameters["ranking"]["semantic_importance_weight"] == 2.0
     assert seen["config"].parameters["freshness"]["category_half_lives_hours"]["kultura"] == 24.0
     assert "Loaded ranking config" in caplog.text
-    assert "recommended-v2" in caplog.text
+    assert "recommended-v3" in caplog.text
     assert "Falling back" not in caplog.text
 
 
