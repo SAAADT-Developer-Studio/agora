@@ -1,7 +1,7 @@
 import heapq
 import itertools
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 
 from langchain.chat_models import BaseChatModel
@@ -9,6 +9,7 @@ from langchain.chat_models import BaseChatModel
 from app.clusterer.cluster import HDBSCAN_PARAMS, cluster_with_confidence
 from app.clusterer.generate_cluster_titles import generate_cluster_titles
 from app.clusterer.hash_cluster import hash_cluster
+from database.repositories import hidden_cluster_members_statement
 from database.schema import Article, ArticleCluster, ClusterRun, ClusterV2
 from database.unit_of_work import UnitOfWork
 from app.integrations.wikimedia import lookup_wikimedia_images_for_clusters
@@ -149,6 +150,83 @@ async def enrich_cluster_payloads_with_wikimedia(
     return enriched
 
 
+def inherits_hidden(
+    article_ids: Sequence[int], hidden_clusters: Sequence[set[int]],
+) -> bool:
+    """True when this remint should stay hidden.
+
+    Either at least half of the new cluster's articles come from hidden
+    clusters, or both of these hold: hidden articles are at least a quarter
+    of the remint, and the remint contains more than half of some previous
+    hidden cluster. The quarter floor stops a hidden singleton, which is
+    common, from hiding the large cluster that absorbed it. 4 hidden + 5 new
+    and 4 hidden + 10 new stay hidden. An empty hidden list is a no-op.
+    """
+    groups = [members for members in hidden_clusters if members]
+    total = len(article_ids)
+    if total == 0 or not groups:
+        return False
+    hidden_ids = set().union(*groups)
+    overlap = sum(article_id in hidden_ids for article_id in article_ids)
+    if overlap * 2 >= total:
+        return True
+    # overlap * 4 >= total is "at least 25%". Below that, do not apply the
+    # per-cluster majority rule.
+    if overlap * 4 < total:
+        return False
+    new_ids = set(article_ids)
+    for members in groups:
+        if len(new_ids & members) * 2 > len(members):
+            return True
+    return False
+
+
+def load_hidden_clusters(session, cluster_ids: Sequence[int]) -> dict[int, set[int]]:
+    """Each hidden cluster's article ids, read from the database now."""
+    if not cluster_ids:
+        return {}
+    grouped: dict[int, set[int]] = {}
+    rows = session.execute(hidden_cluster_members_statement(cluster_ids)).all()
+    for cluster_id, article_id in rows:
+        grouped.setdefault(cluster_id, set()).add(article_id)
+    return grouped
+
+
+def hide_losses(
+    hidden_clusters: Mapping[int, set[int]],
+    remints: Sequence[tuple[set[int], bool]],
+) -> tuple[list[int], list[int]]:
+    """Return fully dropped cluster ids, then partially dropped ones.
+
+    Fully dropped: every reminted article landed in a visible cluster.
+    Partially dropped: a hidden remint kept some articles and a visible
+    remint took others. A cluster with no articles in this run is left out.
+    """
+    dropped: list[int] = []
+    partial: list[int] = []
+    for cluster_id in sorted(hidden_clusters):
+        members = hidden_clusters[cluster_id]
+        if not members:
+            continue
+        in_hidden: set[int] = set()
+        in_visible: set[int] = set()
+        for article_ids, hidden in remints:
+            overlap = members & article_ids
+            if not overlap:
+                continue
+            if hidden:
+                in_hidden.update(overlap)
+            else:
+                in_visible.update(overlap)
+        if not in_hidden and not in_visible:
+            continue
+        if in_hidden and in_visible:
+            partial.append(cluster_id)
+        elif in_visible:
+            dropped.append(cluster_id)
+    return dropped, partial
+
+
 def get_hash_to_cluster_mapping(clusters: Sequence[ClusterV2]) -> dict[int, ClusterV2]:
     hash_to_cluster_mapping = dict()
     for cluster in clusters:
@@ -245,6 +323,11 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
         for title, cluster_articles in zip(generated_titles, clusters_pending_title_generation)
     )
     final = await enrich_cluster_payloads_with_wikimedia(final)
+    # After titles and images. An operator can commit a hide during that work;
+    # the rows loaded at the start of the run would still say visible.
+    hidden_clusters = load_hidden_clusters(
+        uow.session, [cluster.id for cluster in prev_clusters]
+    )
     new_clusters: list[ClusterV2] = []
 
     for i, (
@@ -264,6 +347,9 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
             wiki_image_metadata=wiki_image_metadata,
             wiki_image_lookup_at=wiki_image_lookup_at,
             wiki_image_last_attempt_at=wiki_image_last_attempt_at,
+            hidden=inherits_hidden(
+                [article.id for article in cluster_articles], hidden_clusters.values(),
+            ),
         )
         for article in cluster_articles:
             cluster_v2.memberships.append(
@@ -276,9 +362,30 @@ async def run_clustering(uow: UnitOfWork, model: BaseChatModel):
             )
         new_clusters.append(cluster_v2)
     uow.clusters_v2.bulk_create(new_clusters)
+    # Log only once the new rows are committed. A failed commit must not
+    # report a hide as dropped.
+    uow.commit()
+    dropped, partial = hide_losses(hidden_clusters, [
+        ({member.article_id for member in cluster.memberships}, cluster.hidden)
+        for cluster in new_clusters
+    ])
+    for cluster_id in dropped:
+        logging.warning(
+            "Hide dropped for cluster %s: its articles were reminted only into visible clusters",
+            cluster_id,
+        )
+    for cluster_id in partial:
+        logging.warning(
+            "Hide partially dropped for cluster %s: some of its articles were reminted "
+            "into a visible cluster",
+            cluster_id,
+        )
 
     logging.info(f"Created {len(generated_titles)} new clusters.")
     logging.info(f"Kept {len(final) - len(generated_titles)} clusters.")
+    hidden_count = sum(cluster.hidden for cluster in new_clusters)
+    if hidden_count:
+        logging.info("Carried hidden onto %d reminted clusters", hidden_count)
 
 
 # this is a function to bootstrap the clustering run for existing articles

@@ -9,7 +9,7 @@ story's core go to the judge.
 """
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
@@ -251,7 +251,16 @@ def decide(
     summary: str | None = None,
     published_at: datetime | None = None,
     judge: Judge | None = None,
+    skip_judge_story_ids: Collection[int] = (),
 ) -> Assignment:
+    """Assign an article. ``skip_judge_story_ids`` are hidden stories.
+
+    Cosine joins still land on a hidden story, so a clear match does not
+    become a new visible story. The same-happening judge is not called for a
+    hidden story: a gray-band article seeds instead. That leaves a visible
+    best candidate judged exactly as before, and it does not pull an
+    unrelated article into the hidden story.
+    """
     candidates = [
         candidate for candidate in index.candidates(embedding) if candidate.similarity >= floor
     ]
@@ -260,7 +269,7 @@ def decide(
     for candidate in candidates:
         if candidate.similarity >= threshold and candidate.story_similarity >= story_threshold:
             return _join(candidate, COSINE)
-    if judge is None:
+    if judge is None or candidates[0].story_id in skip_judge_story_ids:
         return _seed()
     best = candidates[0]
     article = PromptArticle(title=title, summary=summary, published_at=published_at)

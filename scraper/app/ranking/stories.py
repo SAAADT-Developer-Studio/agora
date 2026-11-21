@@ -29,6 +29,8 @@ def story_ranking_statement(
       not loaded again. The plan is a ``story_pkey`` walk with the time
       predicate as a filter.
     - ``merged_into_story_id IS NULL``. Merged stories are redirects.
+    - ``hidden IS false``. An operator sets the flag in Postgres. Hidden
+      stories are not selected, so they are not scored and not counted as skips.
     - at least one ``story_article`` row. An empty story has nothing to score.
     - when ``ranking_run_id`` is set, stories that already have a ``story_rank``
       for that run are left out.
@@ -41,6 +43,7 @@ def story_ranking_statement(
     filters = [
         Story.last_article_published_at >= since,
         Story.merged_into_story_id.is_(None),
+        Story.hidden.is_(False),
         Story.id > after_id,
         exists(select(StoryArticle.id).where(StoryArticle.story_id == Story.id)),
     ]
@@ -57,7 +60,10 @@ def story_ranking_statement(
         .order_by(Story.id)
         .limit(limit)
         .options(
-            load_only(Story.id, Story.last_article_published_at, Story.merged_into_story_id),
+            load_only(
+                Story.id, Story.last_article_published_at, Story.merged_into_story_id,
+                Story.hidden,
+            ),
             selectinload(Story.memberships)
             .selectinload(StoryArticle.article)
             .load_only(

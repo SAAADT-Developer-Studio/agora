@@ -20,14 +20,17 @@ def score_cluster(
 ) -> str:
     """Load, score, and persist one cluster. Return ``scored`` or ``skipped``.
 
-    Validation failures (empty title, non-finite embedding, membership from
-    another run) are logged and skipped. They do not abort the batch. A
-    database error rolls back only this cluster's savepoint when the row is
-    attached to a session.
+    Hidden clusters are skipped. Validation failures (empty title, non-finite
+    embedding, membership from another run) are logged and skipped. They do
+    not abort the batch. A database error rolls back only this cluster's
+    savepoint when the row is attached to a session.
     """
     session = object_session(cluster)
 
     def apply() -> str:
+        if cluster.hidden:
+            logging.info("Skipping hidden cluster %s", cluster.id)
+            return "skipped"
         if not cluster.memberships:
             logging.warning("Skipping empty cluster %s", cluster.id)
             return "skipped"
@@ -53,14 +56,17 @@ def score_story(
 ) -> str:
     """Score one story into story_rank. Return ``scored``, ``duplicate``, or ``skipped``.
 
-    Empty and merged stories are skipped. Validation failures are logged and
-    skipped. A story already stored for this run is ``duplicate`` and is not
-    counted as a skip. A database error rolls back only this story's
-    savepoint. The story row itself is not updated.
+    Hidden, empty, and merged stories are skipped. Validation failures are
+    logged and skipped. A story already stored for this run is ``duplicate``
+    and is not counted as a skip. A database error rolls back only this
+    story's savepoint. The story row itself is not updated.
     """
     session = object_session(story)
 
     def apply() -> str:
+        if story.hidden:
+            logging.info("Skipping hidden story %s", story.id)
+            return "skipped"
         if story.merged_into_story_id is not None:
             logging.warning("Skipping merged story %s", story.id)
             return "skipped"

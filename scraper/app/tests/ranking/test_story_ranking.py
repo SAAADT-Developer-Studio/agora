@@ -134,6 +134,26 @@ def test_dry_run_records_nothing_on_the_story(monkeypatch):
     assert not hasattr(story, "rank_score")
 
 
+def test_story_batch_query_skips_hidden_stories():
+    statement = story_ranking_statement(since=NOW - timedelta(days=14), after_id=0, limit=25)
+    sql = str(statement.compile(dialect=postgresql.dialect()))
+    assert "story.hidden IS false" in sql
+
+
+def test_hidden_story_is_not_scored(monkeypatch):
+    story = stored_story()
+    story.hidden = True
+    called = []
+
+    def spy(*args, **kwargs):
+        called.append(args)
+        return object()
+
+    monkeypatch.setattr("app.ranking.persistence.rank_and_save_story", spy)
+    assert score_story(story, NOW, RankingConfig(version="test"), ranking_run_id=1) == "skipped"
+    assert called == []
+
+
 def test_story_batch_query_reads_stories_only():
     statement = story_ranking_statement(since=NOW - timedelta(days=14), after_id=0, limit=25)
     sql = str(statement.compile(dialect=postgresql.dialect())).lower()

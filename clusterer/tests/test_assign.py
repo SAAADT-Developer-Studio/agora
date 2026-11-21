@@ -224,6 +224,61 @@ def test_gray_band_error_seeds() -> None:
     assert assignment.story_id is None
 
 
+def test_gray_band_against_a_hidden_story_skips_the_judge_and_seeds() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, [1.0, 0.0], title="Hidden", summary="Near", is_seed=True)
+    calls: list[object] = []
+
+    def judge(*args: object) -> bool:
+        calls.append(args)
+        return True
+
+    assignment = decide(
+        _toward(0.74), index, title="New", summary="Body", judge=judge, skip_judge_story_ids={10}
+    )
+
+    assert calls == []
+    assert assignment.story_id is None
+    assert assignment.method == SEED
+
+
+def test_cosine_join_of_a_hidden_story_does_not_call_the_judge() -> None:
+    index = NeighborIndex()
+    index.add(1, 10, [1.0, 0.0])
+
+    def judge(*_args: object) -> bool:
+        raise AssertionError("judge should not be called")
+
+    assignment = decide([1.0, 0.0], index, judge=judge, skip_judge_story_ids={10})
+
+    assert assignment.story_id == 10
+    assert assignment.method == COSINE
+
+
+def test_hidden_neighbor_does_not_block_the_judge_for_a_visible_story() -> None:
+    # Story 10 is closer to one member, but story 20 matches as a whole and is
+    # the one the judge sees. Hiding story 10 must leave that decision alone.
+    index = NeighborIndex()
+    index.add(1, 10, [0.819, 0.574, 0.0], title="ten-near")
+    index.add(2, 10, [0.0, 0.0, 1.0], title="ten-far")
+    index.add(3, 20, [0.72, -0.694, 0.0], title="twenty-a")
+    index.add(4, 20, [0.72, -0.694, 0.0], title="twenty-b")
+    seen: list[int] = []
+
+    def judge(_article: PromptArticle, story: StoryContext) -> bool:
+        seen.append(1)
+        assert {member.title for member in story.members} == {"twenty-a", "twenty-b"}
+        return True
+
+    assignment = decide(
+        [1.0, 0.0, 0.0], index, judge=judge, skip_judge_story_ids={10}
+    )
+
+    assert seen == [1]
+    assert assignment.story_id == 20
+    assert assignment.method == LLM
+
+
 def test_gray_band_without_judge_seeds() -> None:
     index = NeighborIndex()
     index.add(1, 10, [1.0, 0.0])

@@ -289,6 +289,13 @@ class ClusterV2(Base):
         DateTime(timezone=True),
         default=None,
     )
+    # Operator flag, set with SQL. Remints copy it forward; readers leave it out.
+    hidden: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     run: Mapped["ClusterRun"] = relationship("ClusterRun", back_populates="clusters", init=False)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -415,6 +422,13 @@ class Story(Base):
     # there. A merged story has no memberships; its URL should redirect.
     merged_into_story_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("story.id", ondelete="SET NULL"), default=None
+    )
+    # Operator flag, set with SQL. The clusterer only copies it onto a merge survivor.
+    hidden: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
     )
 
     memberships: Mapped[List["StoryArticle"]] = relationship(
